@@ -288,6 +288,8 @@ body.view-host .reason-zoom { bottom: 0; cursor: zoom-out; }
 .reason-zoom__meta { margin: 0 0 .6em; color: var(--muted); }
 .reason-zoom__pos { margin-left: .4em; }
 .reason-zoom__text { margin: 0; font-size: 2.1em; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
+.reason-zoom__who { margin: .7em 0 0; font-size: 1.4em; text-align: right; }
+.reason-zoom__who small { font-size: .7em; }
 .reason-zoom__tools { display: flex; gap: .5em; justify-content: flex-end; margin: 1em 0 0; font-size: 15px; }
 
 /* ---------- 전환 효과 (발표자 화면·발표 화면) ----------

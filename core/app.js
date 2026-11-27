@@ -1329,9 +1329,10 @@
       onclick: VIEW === 'host' ? function () { zoomReason(c.sc.vkey, null); } : null },
       h('div', { class: 'reason-zoom__card', onclick: function (e) { e.stopPropagation(); } },
         h('p', { class: 'reason-zoom__meta' }, ch ? h('span', { class: 'feed__pick' }, NUM[it.c] + ' ' + ch.tag) : null,
-          CONFIG.reasonAnonymous ? null : h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),
           h('span', { class: 'reason-zoom__pos' }, (i + 1) + ' / ' + items.length)),
         h('p', { class: 'reason-zoom__text' }, it.r),
+        // 발표자가 골라 크게 띄운 이유에는 쓴 사람 이름을 같이 보여 줌 (config.js 의 reasonZoomName)
+        CONFIG.reasonZoomName || !CONFIG.reasonAnonymous ? h('p', { class: 'reason-zoom__who' }, '— ', h('strong', null, it.name), ' ', h('small', null, it.dept)) : null,
         VIEW === 'host' ? h('p', { class: 'reason-zoom__tools' },
           h('button', { type: 'button', class: 'reason-zoom__prev', onclick: function () { zoomStep(-1); } }, '◀ 이전 이유'),
           h('button', { type: 'button', class: 'reason-zoom__next', onclick: function () { zoomStep(1); } }, '다음 이유 ▶'),
@@ -1455,7 +1456,7 @@
       form.appendChild(h('label', { for: 'reason', class: 'ballot__reason-label' },
         CONFIG.reasonRequired ? '고른 이유 한 줄 (꼭 적어 주세요)' : '이유 한 줄 (안 적어도 됩니다)'));
       form.appendChild(reason);
-      form.appendChild(h('p', { class: 'ballot__reason-note' }, CONFIG.reasonAnonymous ? '적은 이유는 발표 화면에 이름 없이 나옵니다.' : '적은 이유는 발표 화면에 이름과 함께 나옵니다.'));
+      form.appendChild(h('p', { class: 'ballot__reason-note' }, CONFIG.reasonAnonymous ? '적은 이유는 발표 화면에 이름 없이 나옵니다.' + (CONFIG.reasonZoomName ? ' 발표자가 골라 크게 띄울 때는 이름이 함께 나옵니다.' : '') : '적은 이유는 발표 화면에 이름과 함께 나옵니다.'));
       if (S.ui.focusReason) { S.ui.focusReason = false; setTimeout(function () { try { reason.focus(); } catch (e) {} }, 0); }
       if (sn.error) form.appendChild(h('p', { class: 'notice notice--error' }, sn.error));
       if (sn.slow) form.appendChild(h('p', { class: 'notice' }, '연결이 느립니다. 투표가 열려 있는 동안 다시 연결되면 제출됩니다.'));

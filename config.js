@@ -43,6 +43,7 @@ const CONFIG = {
   reasonMin: 2,            /* 이유의 최소 글자 수(공백 제외) */
   reasonAnonymous: true,   /* 발표 화면·발표자 화면의 이유 창에 이름과 학과를 안 보여 줌. 이름을 같이 보이려면 false
                               (응답 내려받기 CSV 에는 누가 쓴 이유인지 그대로 들어감) */
+  reasonZoomName: true,    /* 발표자가 이유를 눌러 크게 띄울 때는 쓴 사람 이름·학과를 같이 보여 줌. 크게 띄울 때도 익명이면 false */
   reasonsPerPage: 6,       /* 결과 장면의 이유 창에 한 장에 보이는 개수. ↓ 키나 "이유 다음 장" 버튼으로 넘김 */
   reasonsLive: 4,          /* 투표 중 이유 창에 보이는 개수(방금 들어온 것부터) */
   showDraftMarks: true,    /* 임시 문구 옆에 "임시" 표시 (발표 전에는 false) */
