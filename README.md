@@ -40,13 +40,19 @@
 
 ## 파일
 
+고치는 파일은 맨 위에 있는 세 개입니다.
+
 - `content.js` — 화면에 나오는 글 전부. 대본은 이 파일만 고칩니다. Stage마다 `choices`가 1차 선택지, `extra`가 추가 자료, `final`이 2차 선택지입니다. 사례마다 `teaser`와 `timeline`은 프롤로그에, `tagline`과 `timelineAfter`는 루트 해금의 실제 역사에 나옵니다. 맨 아래 `compare`가 두 사례 비교입니다.
 - `style.css` — 디자인. 맨 위 주석에 장면·인물·루트별로 쓸 수 있는 속성이 적혀 있습니다.
 - `config.js` — 실시간 DB 주소와 설정(루트 경계, 임시 표시 등)
-- `app.js` — 화면 전환, 투표, 집계, 실시간 연결
-- `index.html` — 위 파일들을 불러오는 틀
-- `qrcode.min.js` — QR 코드 라이브러리(손대지 않음)
-- `firebase-rules.json` — Firebase 규칙 탭에 게시해 둔 내용의 사본
+
+나머지는 손대지 않아도 됩니다.
+
+- `index.html` — 위 파일들을 불러오는 틀. 게임 주소를 열면 이 파일이 열립니다.
+- `core/app.js` — 화면 전환, 투표, 집계, 실시간 연결
+- `core/qrcode.min.js` — QR 코드 라이브러리
+- `core/firebase-rules.json` — Firebase 규칙 탭에 게시해 둔 내용의 사본(기록용)
+- `.nojekyll` — GitHub Pages가 파일을 그대로 내보내게 하는 빈 파일
 
 ## 고치는 법
 
@@ -61,7 +67,7 @@
 ## 설정 (이미 해 둔 것)
 
 - 깃허브 페이지: 저장소 **Settings → Pages**에서 **main** 브랜치의 **/ (root)**를 배포하도록 켜 두었습니다.
-- Firebase: 프로젝트 `dgd-game`에 Realtime Database를 싱가포르(asia-southeast1)로 만들고, 규칙 탭에 `firebase-rules.json` 내용을 게시해 두었습니다.
+- Firebase: 프로젝트 `dgd-game`에 Realtime Database를 싱가포르(asia-southeast1)로 만들고, 규칙 탭에 `core/firebase-rules.json` 내용을 게시해 두었습니다.
 - `config.js`의 `databaseURL`에 그 데이터베이스 주소를 넣어 두었습니다. 이 주소 하나로 연결됩니다.
 
 `config.js`의 `databaseURL`을 비우면 데모 모드가 됩니다. 서버 없이 같은 브라우저의 탭끼리만 연결되고, 흐름을 확인하는 용도입니다.

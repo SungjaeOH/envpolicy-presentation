@@ -6,7 +6,7 @@ const CONFIG = {
        1. console.firebase.google.com 에서 프로젝트 만들기
        2. Databases & Storage > Realtime Database > Create database
           (위치는 싱가포르 asia-southeast1 권장. 한국에서 가장 가깝고 나중에 바꿀 수 없음)
-       3. Realtime Database 의 규칙(Rules) 탭에 firebase-rules.json 내용을 붙여 넣고 게시
+       3. Realtime Database 의 규칙(Rules) 탭에 core/firebase-rules.json 내용을 붙여 넣고 게시
        4. 프로젝트 개요에서 웹 앱(</>)을 등록하면 나오는 firebaseConfig 값을 아래에 붙여 넣기
           (통째로 바꿔 넣어도 됨. databaseURL 이 없으면 Realtime Database 화면 위쪽에 보이는
            https://....firebaseio.com 또는 https://....firebasedatabase.app 주소를 넣기)
@@ -38,7 +38,7 @@ const CONFIG = {
   personalCut: { A: 1, B: 3 },
 
   showPolicyOnVote: true,  /* 투표할 때 대사 아래에 원래 선택지 문구(배제·검증·수용 등)를 같이 보여 줌. 대사만 보이려면 false */
-  reasonMax: 100,          /* 한 줄 이유 최대 글자 수 (늘리려면 firebase-rules.json 의 100 도 같이 바꿔야 함) */
+  reasonMax: 100,          /* 한 줄 이유 최대 글자 수 (늘리려면 core/firebase-rules.json 의 100 도 같이 바꿔야 함) */
   reasonRequired: true,    /* 투표할 때 이유를 꼭 적게 함(1차·2차 모두). 안 적어도 되게 하려면 false */
   reasonMin: 2,            /* 이유의 최소 글자 수(공백 제외) */
   reasonAnonymous: true,   /* 발표 화면·발표자 화면의 이유 창에 이름과 학과를 안 보여 줌. 이름을 같이 보이려면 false

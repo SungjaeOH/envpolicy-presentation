@@ -6,12 +6,13 @@
 <title>두근두근 진실 공략전</title>
 <link rel="icon" href="data:,">
 <!--
-  파일
+  고치는 파일
+    content.js     화면에 나오는 글 전부 (대본은 여기만 고치면 됨)
     style.css      디자인
     config.js      Firebase 값과 설정
-    content.js     화면에 나오는 글 전부 (대본은 여기만 고치면 됨)
-    app.js         화면 전환·투표·집계·실시간 연결
-    qrcode.min.js  QR 라이브러리 (손대지 않음)
+  손대지 않는 파일 (core 폴더)
+    core/app.js         화면 전환·투표·집계·실시간 연결
+    core/qrcode.min.js  QR 라이브러리
 
   화면
     참가자 화면 : 이 페이지 주소 그대로 (QR이 가리키는 곳)
@@ -55,7 +56,7 @@
 </script>
 <script src="config.js"></script>
 <script src="content.js"></script>
-<script src="app.js"></script>
-<script src="qrcode.min.js"></script>
+<script src="core/app.js"></script>
+<script src="core/qrcode.min.js"></script>
 </body>
 </html>
