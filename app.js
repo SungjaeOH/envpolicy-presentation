@@ -299,6 +299,7 @@
   function stepsOf(sc) {
     if (sc.type === 'situation') return 1 + STAGE[sc.key].st.dialogue.length;
     if (sc.type === 'unlock') return 3;                         // 점수와 세 루트 개요 → 루트 해금 → 실제 역사
+    if (sc.type === 'result2') return 2;                        // 표 수·점수·호감도 → 투표한 이유
     if (sc.type === 'compare') return 2;                        // 우리 반과 실제 역사의 루트 → 실제 역사를 세 기준으로
     if (sc.type === 'cutscene') {
       const r = endingRouteFor(sc.caseId);
@@ -312,7 +313,7 @@
     const sc = sceneOf(st.scene);
     const steps = stepsOf(sc);
     const step = Math.min(Math.max(0, st.step | 0), steps - 1);
-    return { idx: sc.index, sc: sc, step: step, steps: steps, open: st.open || null, peek: st.peek || null, feed: st.feed !== false };
+    return { idx: sc.index, sc: sc, step: step, steps: steps, open: st.open || null, peek: st.peek || null, feed: st.feed !== false, rp: st.rp | 0 };
   }
 
   /* ============================================================
@@ -466,7 +467,7 @@
     // 같은 사례의 엔딩 장면 안에서 움직일 때는 "루트 보기"에서 고른 루트를 유지
     const keepPeek = c.peek && ENDING_TYPES[sc.type] && ENDING_TYPES[c.sc.type] && sc.caseId === c.sc.caseId;
     // 투표 장면에 들어가면 그 투표(1차 또는 2차)가 열리고, 나가면 닫힘
-    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null });
+    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0 });
   }
   function go(delta) {
     if (!S.sync || VIEW !== 'host') return;
@@ -481,6 +482,13 @@
   }
   function setPeek(route) { return setState({ peek: route || null, step: 0 }); }
   function toggleFeed() { return setState({ feed: !cur().feed }); }
+  /* 결과 장면의 이유 창을 다음 장으로 (마지막 장 다음은 첫 장) */
+  function reasonWindowShown(c) { return c.sc.type === 'result1' || (c.sc.type === 'result2' && c.step >= 1); }
+  function nextReasonPage() {
+    const c = cur();
+    if (!reasonWindowShown(c)) return;
+    return setState({ rp: (c.rp + 1) % reasonPages(c.sc.vkey) });
+  }
 
   /* 집계를 서버에 올려 둠 → 참가자 휴대폰이 "우리 반 결과"를 볼 수 있음.
      아직 화면에 공개하지 않은 결과는 올리지 않음. */
@@ -531,6 +539,8 @@
     }
     return S.sync.update('players', patch).catch(reportError);
   }
+  const BOT_REASONS = ['현장에서 본 사람 말을 먼저 들어야 한다고 생각합니다', '근거가 확인돼야 정책에 쓸 수 있다고 봅니다', '조사해 보고 정해도 늦지 않습니다',
+    '시간과 예산을 생각하면 이쪽이 현실적입니다', '틀릴 수는 있어도 빼 버릴 이유는 아닙니다', '테스트 의견'];
   function botVote() {
     const c = cur();
     if (c.sc.type !== 'vote') return;
@@ -540,7 +550,7 @@
       if (!S.players[pid].bot) return;
       const pick = Math.floor(Math.random() * list.length);
       const v = { c: pick, t: Date.now() };
-      if (Math.random() < 0.5) v.r = '테스트 의견 ' + NUM[pick];
+      v.r = BOT_REASONS[Math.floor(Math.random() * BOT_REASONS.length)];
       patch[pid] = v;
     });
     if (!Object.keys(patch).length) return;
@@ -615,9 +625,15 @@
       reportError(err);
     });
   }
+  /* 이유가 충분한지. 꼭 적게 해 두었으면(config.js 의 reasonRequired) 공백을 뺀 글자 수가 reasonMin 이상이어야 함 */
+  function reasonOk(reason) {
+    if (!CONFIG.reasonRequired) return true;
+    return String(reason || '').replace(/\s+/g, '').length >= (CONFIG.reasonMin || 1);
+  }
   function submitVote(vkey, choice, reason) {
     const v = { c: choice, t: Date.now() };
     const r = String(reason || '').trim().slice(0, CONFIG.reasonMax);
+    if (!reasonOk(r)) return Promise.reject(new Error('이유가 비어 있음'));
     if (r) v.r = r;
     return S.sync.set('votes/' + vkey + '/' + S.me.id, v);
   }
@@ -690,8 +706,7 @@
           h('span', { class: 'choice__line' }, '“', T(ch.line), '”'),
           h('span', { class: 'choice__policy' }, ch.tag)),
         h('div', { class: 'tally__bar' }, h('span', { class: 'tally__fill', style: 'width:' + pct + '%' })),
-        h('div', { class: 'tally__num' }, n + '명 (' + pct + '%)'),
-        reasons(vkey, { filterChoice: i }));
+        h('div', { class: 'tally__num' }, n + '명 (' + pct + '%)'));
     }));
   }
   /* 1차에서 고른 것 → 2차에서 고른 것 (두 번 다 투표한 사람 수) */
@@ -705,23 +720,43 @@
           sum.move[i].map(function (n, j) { return h('td', { 'data-to': j }, n + '명'); }));
       })));
   }
-  /* 학생들이 적은 한 줄 이유. key = 투표가 저장된 칸(1차는 스테이지 키, 2차는 뒤에 _r2). filterChoice 를 주면 그 선택지만 */
-  function reasons(key, opt) {
-    const v = S.votes[key] || {};
-    const hid = S.hide[key] || {};
-    let items = Object.keys(v).filter(function (pid) {
-      return S.players[pid] && v[pid] && v[pid].r && !hid[pid] && (opt.filterChoice == null || v[pid].c === opt.filterChoice);
-    }).map(function (pid) { return { pid: pid, name: S.players[pid].name, dept: S.players[pid].dept, c: v[pid].c, r: v[pid].r, t: v[pid].t || 0 }; });
-    items.sort(function (a, b) { return b.t - a.t; });
-    if (opt.limit) items = items.slice(0, opt.limit);
-    if (!items.length) return null;
-    return h('ul', { class: 'feed' }, items.map(function (it) {
-      return h('li', { class: 'feed__item', 'data-pid': it.pid,
-        title: VIEW === 'host' ? '누르면 화면에서 숨김' : null,
-        onclick: VIEW === 'host' ? function () { setHidden(key, it.pid, true); } : null },
-        h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),
-        h('span', { class: 'feed__text' }, it.r));
-    }));
+  /* 학생들이 적은 한 줄 이유. vkey = 투표가 저장된 칸(1차는 스테이지 키, 2차는 뒤에 _r2). 발표자가 숨긴 것은 빠짐 */
+  function reasonItems(vkey) {
+    const v = S.votes[vkey] || {};
+    const hid = S.hide[vkey] || {};
+    return Object.keys(v).filter(function (pid) { return S.players[pid] && v[pid] && v[pid].r && !hid[pid]; })
+      .map(function (pid) { return { pid: pid, name: S.players[pid].name, dept: S.players[pid].dept, c: v[pid].c, r: v[pid].r, t: v[pid].t || 0 }; });
+  }
+  function reasonPages(vkey) { return Math.max(1, Math.ceil(reasonItems(vkey).length / (CONFIG.reasonsPerPage || 6))); }
+  /* 이유 창. 미연시의 대화창처럼 이름과 한 줄 이유를 보여 줌
+     opt.live  = 투표 중: 방금 들어온 것부터 한 장만. 무엇을 골랐는지는 안 보임
+     opt.list  = 결과: 선택지 목록. 선택지 순서(①②③)대로 한 장에 reasonsPerPage 개씩, opt.page 번째 장. 고른 선택지를 앞에 붙임 */
+  function reasonWindow(vkey, opt) {
+    const per = CONFIG.reasonsPerPage || 6;
+    let items = reasonItems(vkey);
+    const total = items.length;
+    let pages = 1, page = 0;
+    if (opt.live) {
+      items.sort(function (a, b) { return b.t - a.t; });
+      items = items.slice(0, CONFIG.reasonsLive || 4);
+    } else {
+      items.sort(function (a, b) { return a.c - b.c || a.t - b.t; });
+      pages = Math.max(1, Math.ceil(total / per));
+      page = Math.min(Math.max(0, opt.page | 0), pages - 1);
+      items = items.slice(page * per, page * per + per);
+    }
+    return h('div', { class: 'reason-window', 'data-live': opt.live ? '1' : null, 'data-page': page, 'data-pages': pages },
+      h('p', { class: 'reason-window__title' }, opt.live ? '방금 들어온 이유' : '투표한 이유', ' ',
+        h('small', null, total + '개' + (pages > 1 ? ' · ' + (page + 1) + ' / ' + pages + '장' : ''))),
+      total ? h('ul', { class: 'feed' }, items.map(function (it) {
+        const ch = opt.list && opt.list[it.c];
+        return h('li', { class: 'feed__item', 'data-pid': it.pid, 'data-choice': opt.live ? null : it.c,
+          title: VIEW === 'host' ? '누르면 화면에서 숨김' : null,
+          onclick: VIEW === 'host' ? function () { setHidden(vkey, it.pid, true); } : null },
+          h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),
+          ch ? h('span', { class: 'feed__pick' }, NUM[it.c] + ' ' + ch.tag) : null,
+          h('span', { class: 'feed__text' }, it.r));
+      })) : h('p', { class: 'empty reason-window__empty' }, opt.live ? '아직 들어온 이유가 없습니다.' : '적힌 이유가 없습니다.'));
   }
   function routeBanner(cs, r, withIntro) {
     return h('div', { class: 'route-banner', 'data-route': r },
@@ -881,15 +916,15 @@
       const sg = STAGE[c.sc.key], second = c.sc.round === 2;
       const sum = stageSummary(c.sc.key);
       return h('section', { class: 'scene scene--vote', 'data-round': c.sc.round },
-        sceneHead(c, second ? '2차 투표 · 추가 자료를 본 뒤의 최종 선택' : '1차 투표'),
+        sceneHead(c, second ? '2차 투표 · 추가 자료를 본 뒤의 최종 선택. 휴대폰에서 다시 고르고 이유를 적어 주세요' : '1차 투표 · 휴대폰에서 대사를 고르고 이유를 한 줄 적어 주세요'),
         h('p', { class: 'scene__question' }, T(second ? sg.st.final.question : sg.st.question)),
-        h('p', { class: 'vote__prompt' }, second ? '이제 어떻게 할까요? 휴대폰에서 다시 골라 주세요.' : '어떤 대사로 답할까요? 휴대폰에서 골라 주세요.'),
         choiceList(choicesOf(c.sc.key, c.sc.round)),
         h('div', { class: 'vote__status' },
-          h('p', { class: 'vote__count' }, '투표 ', h('strong', null, String(second ? sum.voters2 : sum.voters1)), ' / ' + playerCount() + '명',
-            c.open === c.sc.vkey ? '' : ' · 마감'),
-          qrBox(joinUrl(), 'qr--small')),
-        c.feed ? reasons(c.sc.vkey, { limit: 8 }) : null);
+          c.feed ? reasonWindow(c.sc.vkey, { live: true }) : null,
+          h('div', { class: 'vote__side' },
+            h('p', { class: 'vote__count' }, '투표 ', h('strong', null, String(second ? sum.voters2 : sum.voters1)), ' / ' + playerCount() + '명',
+              c.open === c.sc.vkey ? '' : ' · 마감'),
+            qrBox(joinUrl(), 'qr--small'))));
     },
     result1: function (c) {
       const sg = STAGE[c.sc.key];
@@ -898,20 +933,24 @@
         sceneHead(c, '1차 투표 결과'),
         h('p', { class: 'scene__question' }, T(sg.st.question)),
         tallyList(sg.st.choices, sum.n1, sum.voters1, c.sc.vkey),
+        reasonWindow(c.sc.vkey, { list: sg.st.choices, page: c.rp }),
         h('p', { class: 'result__note' }, '점수는 추가 자료를 보고 2차 투표까지 마친 뒤에 매겨집니다.'));
     },
     result2: function (c) {
       const sg = STAGE[c.sc.key];
       const sum = stageSummary(c.sc.key);
       return h('section', { class: 'scene scene--result scene--result2', 'data-round': 2 },
-        sceneHead(c, '2차 투표 결과'),
+        sceneHead(c, c.step >= 1 ? '2차 투표 결과 · 왜 그렇게 골랐나요' : '2차 투표 결과'),
         h('p', { class: 'scene__question' }, T(sg.st.final.question)),
         tallyList(sg.st.final.choices, sum.n2, sum.voters2, c.sc.vkey),
-        shiftTable(sg.st, sum),
-        h('p', { class: 'result__breakdown' }, '2점(' + SCORE_WHY[2] + ') ' + sum.byScore[2] + '명 · 1점(' + SCORE_WHY[1] + ') ' + sum.byScore[1] + '명 · 0점(' + SCORE_WHY[0] + ') ' + sum.byScore[0] + '명'),
-        h('p', { class: 'result__score' }, '이번 Stage 반 점수 ', h('strong', null, sum.total + '점'),
-          ' / 만점 ' + sum.max + '점 (' + sum.voters + '명 × ' + MAX_SCORE + '점)'),
-        castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx), sum.aff));
+        c.step >= 1 ? reasonWindow(c.sc.vkey, { list: sg.st.final.choices, page: c.rp }) : null,
+        c.step >= 1 ? null : h('div', { class: 'result__detail' },
+          shiftTable(sg.st, sum),
+          h('div', { class: 'result__points' },
+            h('p', { class: 'result__breakdown' }, '2점(' + SCORE_WHY[2] + ') ' + sum.byScore[2] + '명 · 1점(' + SCORE_WHY[1] + ') ' + sum.byScore[1] + '명 · 0점(' + SCORE_WHY[0] + ') ' + sum.byScore[0] + '명'),
+            h('p', { class: 'result__score' }, '이번 Stage 반 점수 ', h('strong', null, sum.total + '점'),
+              ' / 만점 ' + sum.max + '점 (' + sum.voters + '명 × ' + MAX_SCORE + '점)'))),
+        c.step >= 1 ? null : castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx), sum.aff));
     },
     extra: function (c) {
       const ex = STAGE[c.sc.key].st.extra;
@@ -1174,6 +1213,10 @@
       const send = function () {
         if (sn.sending) return;
         if (d.c == null) { sn.error = '대사를 하나 골라 주세요.'; requestRender(); return; }
+        if (!reasonOk(d.r)) {
+          sn.error = '고른 이유를 한 줄 적어 주세요.' + ((CONFIG.reasonMin || 1) > 1 ? ' (' + CONFIG.reasonMin + '자 이상)' : '');
+          S.ui.focusReason = true; requestRender(); return;
+        }
         sn.sending = true; sn.slow = false; sn.error = ''; requestRender();
         const slowTimer = setTimeout(function () { if (sn.sending) { sn.slow = true; requestRender(); } }, 8000);
         submitVote(vk, d.c, d.r).then(function () {
@@ -1202,8 +1245,11 @@
       });
       const reason = h('input', { type: 'text', id: 'reason', class: 'ballot__reason', maxlength: String(CONFIG.reasonMax), value: d.r, autocomplete: 'off',
         oninput: function () { d.r = reason.value; d.touched = true; } });
-      form.appendChild(h('label', { for: 'reason', class: 'ballot__reason-label' }, '이유 한 줄 (안 적어도 됩니다)'));
+      form.appendChild(h('label', { for: 'reason', class: 'ballot__reason-label' },
+        CONFIG.reasonRequired ? '고른 이유 한 줄 (꼭 적어 주세요)' : '이유 한 줄 (안 적어도 됩니다)'));
       form.appendChild(reason);
+      form.appendChild(h('p', { class: 'ballot__reason-note' }, '적은 이유는 발표 화면에 이름과 함께 나옵니다.'));
+      if (S.ui.focusReason) { S.ui.focusReason = false; setTimeout(function () { try { reason.focus(); } catch (e) {} }, 0); }
       if (sn.error) form.appendChild(h('p', { class: 'notice notice--error' }, sn.error));
       if (sn.slow) form.appendChild(h('p', { class: 'notice' }, '연결이 느립니다. 투표가 열려 있는 동안 다시 연결되면 제출됩니다.'));
       form.appendChild(h('button', { type: 'button', class: 'primary ballot__send', disabled: sn.sending, onclick: send }, sn.sending ? '보내는 중…' : (mine ? '다시 제출' : '제출')));
@@ -1366,7 +1412,8 @@
     ctl.feedBtn = h('button', { type: 'button', onclick: toggleFeed });
     ctl.unhideBtn = h('button', { type: 'button', hidden: true, onclick: function () { const c = cur(); if (c.sc.vkey) unhideAll(c.sc.vkey); } });
     ctl.clearBtn = h('button', { type: 'button', onclick: function () { const c = cur(); if (c.sc.vkey) clearVotes(c.sc.vkey); } }, '투표 지우기');
-    append(ctl.voteBox, [ctl.feedBtn, ctl.unhideBtn, ctl.clearBtn]);
+    ctl.pageBtn = h('button', { type: 'button', hidden: true, onclick: nextReasonPage });
+    append(ctl.voteBox, [ctl.feedBtn, ctl.pageBtn, ctl.unhideBtn, ctl.clearBtn]);
 
     ctl.resetBtn = h('button', { type: 'button', onclick: function () { S.ui.resetArmed = true; requestRender(); } }, '전체 초기화');
     ctl.resetYes = h('button', { type: 'button', class: 'danger', hidden: true, onclick: function () { S.ui.resetArmed = false; resetAll(); requestRender(); } }, '정말 지움 (참가자·투표 전부)');
@@ -1407,6 +1454,9 @@
       const hiddenCount = Object.keys(S.hide[c.sc.vkey] || {}).length;
       ctl.feedBtn.textContent = '투표 중 이유 표시: ' + (c.feed ? '켬' : '끔');
       ctl.feedBtn.hidden = c.sc.type !== 'vote';
+      const pages = reasonWindowShown(c) ? reasonPages(c.sc.vkey) : 1;      // 이유 창이 보이고 한 장을 넘으면 넘기는 버튼
+      ctl.pageBtn.hidden = pages < 2;
+      ctl.pageBtn.textContent = '이유 다음 장 (' + (Math.min(c.rp, pages - 1) + 1) + ' / ' + pages + ')';
       ctl.unhideBtn.hidden = !hiddenCount;
       ctl.unhideBtn.textContent = '숨긴 이유 ' + hiddenCount + '개 다시 보이기';
       ctl.clearBtn.textContent = '이 ' + c.sc.round + '차 투표 지우기';
@@ -1546,6 +1596,7 @@
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
       if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); go(1); }
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+      else if (e.key === 'ArrowDown' && reasonWindowShown(cur())) { e.preventDefault(); nextReasonPage(); }   // 이유 창이 보일 때: 이유 다음 장
       else if (e.key === ' ' && tag !== 'BUTTON' && tag !== 'A' && tag !== 'SUMMARY') { e.preventDefault(); go(1); }
     });
     window.__dgdReady = true;                                   // 여기까지 왔으면 파일은 정상적으로 읽힌 것
@@ -1563,7 +1614,7 @@
   }
 
   /* 점검용으로 몇 가지를 밖에서 볼 수 있게 둠 (브라우저 콘솔에서 DGD 입력) */
-  window.DGD = { S: S, SCENES: SCENES, VOTE_KEYS: VOTE_KEYS, routeOf: routeOf, personalRoute: personalRoute, stageScore: stageScore, buildCsv: buildCsv, session: SESSION, demo: DEMO };
+  window.DGD = { S: S, submitVote: submitVote, SCENES: SCENES, VOTE_KEYS: VOTE_KEYS, routeOf: routeOf, personalRoute: personalRoute, stageScore: stageScore, buildCsv: buildCsv, session: SESSION, demo: DEMO };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

@@ -39,6 +39,10 @@ const CONFIG = {
 
   showPolicyOnVote: true,  /* 투표할 때 대사 아래에 원래 선택지 문구(배제·검증·수용 등)를 같이 보여 줌. 대사만 보이려면 false */
   reasonMax: 100,          /* 한 줄 이유 최대 글자 수 (늘리려면 firebase-rules.json 의 100 도 같이 바꿔야 함) */
+  reasonRequired: true,    /* 투표할 때 이유를 꼭 적게 함(1차·2차 모두). 안 적어도 되게 하려면 false */
+  reasonMin: 2,            /* 이유의 최소 글자 수(공백 제외) */
+  reasonsPerPage: 6,       /* 결과 장면의 이유 창에 한 장에 보이는 개수. ↓ 키나 "이유 다음 장" 버튼으로 넘김 */
+  reasonsLive: 4,          /* 투표 중 이유 창에 보이는 개수(방금 들어온 것부터) */
   showDraftMarks: true,    /* 임시 문구 옆에 "임시" 표시 (발표 전에는 false) */
   hostKey: '',             /* 값을 넣으면 발표자 화면 주소에 &key=값 이 있어야 열림 (간단한 가림막 수준) */
 };
