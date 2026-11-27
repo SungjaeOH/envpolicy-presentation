@@ -1,14 +1,14 @@
 # 두근두근 진실 공략전 — 발표용 게임
 
-> <samp>글자가 이상하게 보이면 크롬 자동 번역 때문입니다. 주소창 오른쪽의 번역 아이콘을 눌러 "원본 보기"를 고르세요.</samp>
+> `글자가 이상하게 보이면 크롬 자동 번역 때문입니다. 주소창의 번역 아이콘에서 번역을 꺼 주세요.`
 
 환경정책입문 C조 최종발표에서 쓰는 QR 참여 게임입니다. 발표 화면과 참가자(휴대폰) 화면이 같은 페이지에 들어 있습니다.
 
 ## 주소
 
-- `발표자 화면` https://sungjaeoh.github.io/dgd-game/?view=host <br><samp>노트북으로 여는 화면. 발표 화면 + 아래쪽 조작 버튼. → ← 키로 장면을 넘깁니다.</samp>
-- `참가자 화면` https://sungjaeoh.github.io/dgd-game/ <br><samp>휴대폰으로 여는 화면. 수업에서는 발표자 화면에 뜨는 QR로 들어옵니다.</samp>
-- `발표 화면` https://sungjaeoh.github.io/dgd-game/?view=screen <br><samp>조작 버튼 없이 따라가기만 하는 화면. 빔프로젝터를 다른 컴퓨터에 연결할 때 씁니다.</samp>
+- `발표자 화면` https://sungjaeoh.github.io/dgd-game/?view=host — `노트북에서 엽니다. → ← 키로 장면을 넘깁니다`
+- `참가자 화면` https://sungjaeoh.github.io/dgd-game/ — `휴대폰에서 엽니다. 수업에서는 발표자 화면의 QR로 들어옵니다`
+- `발표 화면` https://sungjaeoh.github.io/dgd-game/?view=screen — `조작 버튼 없이 따라가기만 하는 화면`
 
 ## 한 Stage의 순서
 
