@@ -313,7 +313,8 @@
     const sc = sceneOf(st.scene);
     const steps = stepsOf(sc);
     const step = Math.min(Math.max(0, st.step | 0), steps - 1);
-    return { idx: sc.index, sc: sc, step: step, steps: steps, open: st.open || null, peek: st.peek || null, feed: st.feed !== false, rp: st.rp | 0 };
+    return { idx: sc.index, sc: sc, step: step, steps: steps, open: st.open || null, peek: st.peek || null, feed: st.feed !== false, rp: st.rp | 0,
+      zoom: st.zoom && st.zoom.k && st.zoom.p ? { k: String(st.zoom.k), p: String(st.zoom.p) } : null };
   }
 
   /* ============================================================
@@ -467,7 +468,7 @@
     // 같은 사례의 엔딩 장면 안에서 움직일 때는 "루트 보기"에서 고른 루트를 유지
     const keepPeek = c.peek && ENDING_TYPES[sc.type] && ENDING_TYPES[c.sc.type] && sc.caseId === c.sc.caseId;
     // 투표 장면에 들어가면 그 투표(1차 또는 2차)가 열리고, 나가면 닫힘
-    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0 });
+    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0, zoom: null });
   }
   function go(delta) {
     if (!S.sync || VIEW !== 'host') return;
@@ -487,7 +488,26 @@
   function nextReasonPage() {
     const c = cur();
     if (!reasonWindowShown(c)) return;
-    return setState({ rp: (c.rp + 1) % reasonPages(c.sc.vkey) });
+    return setState({ rp: (c.rp + 1) % reasonPages(c.sc.vkey), zoom: null });
+  }
+  /* 이유 하나를 화면 가운데에 크게 띄움(발표 화면도 같이). pid 를 비우면 닫음 */
+  function zoomReason(vkey, pid) { return setState({ zoom: pid ? { k: vkey, p: pid } : null }); }
+  /* 지금 장면의 이유 창에 보이는 순서대로의 목록 (확대한 채 앞뒤로 넘길 때 씀) */
+  function reasonOrder(c) {
+    const items = reasonItems(c.sc.vkey);
+    if (c.sc.type === 'vote') items.sort(function (a, b) { return b.t - a.t; });
+    else items.sort(function (a, b) { return a.c - b.c || a.t - b.t; });
+    return items;
+  }
+  function zoomStep(delta) {
+    const c = cur();
+    if (!c.zoom || !c.sc.vkey) return;
+    const items = reasonOrder(c);
+    const i = items.findIndex(function (it) { return it.pid === c.zoom.p; });
+    if (i < 0 || !items.length) return zoomReason(c.sc.vkey, null);
+    const j = (i + delta + items.length) % items.length;
+    const per = CONFIG.reasonsPerPage || 6;
+    return setState({ zoom: { k: c.sc.vkey, p: items[j].pid }, rp: c.sc.type === 'vote' ? c.rp : Math.floor(j / per) });   // 이유 창의 장도 따라감
   }
 
   /* 집계를 서버에 올려 둠 → 참가자 휴대폰이 "우리 반 결과"를 볼 수 있음.
@@ -710,14 +730,46 @@
     }));
   }
   /* 1차에서 고른 것 → 2차에서 고른 것 (두 번 다 투표한 사람 수) */
-  function shiftTable(st, sum) {
+  /* 1차에서 i번, 2차에서 j번을 고른 사람들 (입장한 순서) */
+  function moversOf(key, i, j) {
+    const a = S.votes[key] || {}, b = S.votes[key + R2] || {}, st = STAGE[key].st;
+    return Object.keys(b).filter(function (pid) {
+      return S.players[pid] && validPick(b[pid], st.final.choices.length) && b[pid].c === j && validPick(a[pid], st.choices.length) && a[pid].c === i;
+    }).sort(function (x, y) { return (S.players[x].t || 0) - (S.players[y].t || 0); })
+      .map(function (pid) { return { pid: pid, name: S.players[pid].name, dept: S.players[pid].dept }; });
+  }
+  /* 발표자 화면에서만: 표의 칸을 누르면 그 칸에 든 사람 이름이 표 아래에 나옴 (직접 이유를 물어볼 때 씀).
+     이 발표자 화면에만 보이고 발표 화면과 휴대폰에는 가지 않음. 장면이 바뀌면 닫힘 */
+  function toggleCell(key, i, j) {
+    const id = key + ':' + i + ':' + j;
+    S.ui.cell = S.ui.cell === id ? null : id;
+    lastSig = null; requestRender();
+  }
+  function shiftNames(key, st) {
+    if (VIEW !== 'host' || !S.ui.cell || S.ui.cell.indexOf(key + ':') !== 0) return null;
+    const p = S.ui.cell.slice(key.length + 1).split(':'), i = Number(p[0]), j = Number(p[1]);
+    if (!st.choices[i] || !st.final.choices[j]) return null;
+    const list = moversOf(key, i, j);
+    return h('div', { class: 'shift-names', 'data-from': i, 'data-to': j },
+      h('p', { class: 'shift-names__title' }, '1차 ' + NUM[i] + ' ' + st.choices[i].tag + ' → 2차 ' + NUM[j] + ' ' + st.final.choices[j].tag + ' · ' + list.length + '명 ',
+        h('small', null, '(이 발표자 화면에만 보입니다) '),
+        h('button', { type: 'button', class: 'link shift-names__close', onclick: function () { S.ui.cell = null; lastSig = null; requestRender(); } }, '닫기')),
+      list.length ? h('ul', { class: 'players' }, list.map(function (m) {
+        return h('li', { class: 'players__item', 'data-pid': m.pid }, h('span', { class: 'players__name' }, m.name), ' ', h('small', { class: 'players__dept' }, m.dept));
+      })) : h('p', { class: 'empty' }, '이 칸에는 아무도 없습니다.'));
+  }
+  function shiftTable(st, sum, key) {
+    const cellId = function (i, j) { return key + ':' + i + ':' + j; };
     return h('table', { class: 'shift' },
-      h('caption', null, '1차 선택 → 2차 선택'),
+      h('caption', null, '1차 선택 → 2차 선택', VIEW === 'host' && key ? h('small', null, ' · 칸을 누르면 이름 확인') : null),
       h('thead', null, h('tr', null, h('th', null, '1차'),
         st.final.choices.map(function (ch, j) { return h('th', null, '2차 ' + NUM[j] + ' ' + ch.tag); }))),
       h('tbody', null, st.choices.map(function (ch, i) {
         return h('tr', { 'data-choice': i }, h('th', null, NUM[i] + ' ' + ch.tag),
-          sum.move[i].map(function (n, j) { return h('td', { 'data-to': j }, n + '명'); }));
+          sum.move[i].map(function (n, j) {
+            return h('td', { 'data-to': j, class: VIEW === 'host' && key && S.ui.cell === cellId(i, j) ? 'is-on' : null },
+              VIEW === 'host' && key ? h('button', { type: 'button', class: 'link shift__who', title: '이름 확인', onclick: function () { toggleCell(key, i, j); } }, n + '명') : n + '명');
+          }));
       })));
   }
   /* 학생들이 적은 한 줄 이유. vkey = 투표가 저장된 칸(1차는 스테이지 키, 2차는 뒤에 _r2). 발표자가 숨긴 것은 빠짐 */
@@ -751,11 +803,14 @@
       total ? h('ul', { class: 'feed' }, items.map(function (it) {
         const ch = opt.list && opt.list[it.c];
         return h('li', { class: 'feed__item', 'data-pid': it.pid, 'data-choice': opt.live ? null : it.c,
-          title: VIEW === 'host' ? '누르면 화면에서 숨김' : null,
-          onclick: VIEW === 'host' ? function () { setHidden(vkey, it.pid, true); } : null },
+          title: VIEW === 'host' ? '누르면 크게 보기' : null,
+          onclick: VIEW === 'host' ? function () { zoomReason(vkey, it.pid); } : null },
           CONFIG.reasonAnonymous ? null : h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),   // 익명이면 이름·학과를 화면에 넣지 않음
           ch ? h('span', { class: 'feed__pick' }, NUM[it.c] + ' ' + ch.tag) : null,
-          h('span', { class: 'feed__text' }, it.r));
+          h('span', { class: 'feed__text' }, it.r),
+          VIEW === 'host' ? h('span', { class: 'feed__tools' },
+            h('button', { type: 'button', class: 'link feed__zoom', onclick: function (e) { e.stopPropagation(); zoomReason(vkey, it.pid); } }, '확대'),
+            h('button', { type: 'button', class: 'link feed__hide', onclick: function (e) { e.stopPropagation(); setHidden(vkey, it.pid, true); } }, '숨김')) : null);
       })) : h('p', { class: 'empty reason-window__empty' }, opt.live ? '아직 들어온 이유가 없습니다.' : '적힌 이유가 없습니다.'));
   }
   function routeBanner(cs, r, withIntro) {
@@ -945,11 +1000,12 @@
         tallyList(sg.st.final.choices, sum.n2, sum.voters2, c.sc.vkey),
         c.step >= 1 ? reasonWindow(c.sc.vkey, { list: sg.st.final.choices, page: c.rp }) : null,
         c.step >= 1 ? null : h('div', { class: 'result__detail' },
-          shiftTable(sg.st, sum),
+          shiftTable(sg.st, sum, c.sc.key),
           h('div', { class: 'result__points' },
             h('p', { class: 'result__breakdown' }, '2점(' + SCORE_WHY[2] + ') ' + sum.byScore[2] + '명 · 1점(' + SCORE_WHY[1] + ') ' + sum.byScore[1] + '명 · 0점(' + SCORE_WHY[0] + ') ' + sum.byScore[0] + '명'),
             h('p', { class: 'result__score' }, '이번 Stage 반 점수 ', h('strong', null, sum.total + '점'),
               ' / 만점 ' + sum.max + '점 (' + sum.voters + '명 × ' + MAX_SCORE + '점)'))),
+        c.step >= 1 ? null : shiftNames(c.sc.key, sg.st),
         c.step >= 1 ? null : castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx), sum.aff));
     },
     extra: function (c) {
@@ -1127,8 +1183,40 @@
   function renderScreen() {
     const c = cur();
     const main = h('main', { class: 'stage', 'data-scene': c.sc.id, 'data-type': c.sc.type, 'data-case': c.sc.caseId || '', 'data-step': c.step, 'data-round': c.sc.round || '' });
+    // 전환 효과: 장면이나 단계가 막 바뀐 그리기에만 data-enter 를 붙임 (표가 들어와 다시 그릴 때는 효과가 되풀이되지 않게)
+    const at = c.sc.id + ':' + c.step;
+    if (at !== lastShown) {
+      main.setAttribute('data-enter', lastShown && lastShown.split(':')[0] === c.sc.id ? 'step' : 'scene');
+      lastShown = at;
+    }
     main.appendChild(SCREEN[c.sc.type](c));
+    const zoom = reasonZoom(c);
+    if (zoom) main.appendChild(zoom);
     return main;
+  }
+  let lastShown = '', lastZoom = '';
+  /* 확대한 이유. 발표자 화면에서는 닫기·이전·다음 버튼이 붙음 */
+  function reasonZoom(c) {
+    if (!c.zoom || c.zoom.k !== c.sc.vkey) { lastZoom = ''; return null; }
+    const items = reasonOrder(c);
+    const i = items.findIndex(function (it) { return it.pid === c.zoom.p; });
+    if (i < 0) { lastZoom = ''; return null; }
+    const it = items[i], live = c.sc.type === 'vote';
+    const list = live ? null : choicesOf(c.sc.key, c.sc.round);
+    const ch = list && list[it.c];
+    const fresh = lastZoom !== c.zoom.k + ':' + c.zoom.p;          // 새로 띄운 것일 때만 효과
+    lastZoom = c.zoom.k + ':' + c.zoom.p;
+    return h('div', { class: 'reason-zoom' + (fresh ? ' is-fresh' : ''), 'data-pid': it.pid,
+      onclick: VIEW === 'host' ? function () { zoomReason(c.sc.vkey, null); } : null },
+      h('div', { class: 'reason-zoom__card', onclick: function (e) { e.stopPropagation(); } },
+        h('p', { class: 'reason-zoom__meta' }, ch ? h('span', { class: 'feed__pick' }, NUM[it.c] + ' ' + ch.tag) : null,
+          CONFIG.reasonAnonymous ? null : h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),
+          h('span', { class: 'reason-zoom__pos' }, (i + 1) + ' / ' + items.length)),
+        h('p', { class: 'reason-zoom__text' }, it.r),
+        VIEW === 'host' ? h('p', { class: 'reason-zoom__tools' },
+          h('button', { type: 'button', class: 'reason-zoom__prev', onclick: function () { zoomStep(-1); } }, '◀ 이전 이유'),
+          h('button', { type: 'button', class: 'reason-zoom__next', onclick: function () { zoomStep(1); } }, '다음 이유 ▶'),
+          h('button', { type: 'button', class: 'primary reason-zoom__close', onclick: function () { zoomReason(c.sc.vkey, null); } }, '닫기 (Esc)')) : null));
   }
 
   /* ============================================================
@@ -1513,7 +1601,7 @@
     lastSig = sig;
     chrome.view.replaceChildren(VIEW === 'play' ? renderPlay() : renderScreen());
     const sceneNow = (S.state && S.state.scene) || '';
-    if (sceneNow !== lastScene) { lastScene = sceneNow; try { window.scrollTo(0, 0); } catch (e) { /* 무시 */ } }   // 장면이 바뀌면 맨 위로
+    if (sceneNow !== lastScene) { lastScene = sceneNow; S.ui.cell = null; try { window.scrollTo(0, 0); } catch (e) { /* 무시 */ } }   // 장면이 바뀌면 맨 위로
   }
 
   /* ============================================================
@@ -1594,6 +1682,11 @@
       if (VIEW !== 'host' || e.altKey || e.ctrlKey || e.metaKey) return;
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (cur().zoom) {                                           // 이유를 확대해 둔 동안: Esc 닫기, ← → ↑ ↓ 로 앞뒤 이유
+        if (e.key === 'Escape') { e.preventDefault(); zoomReason(cur().sc.vkey, null); return; }
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); zoomStep(1); return; }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); zoomStep(-1); return; }
+      }
       if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); go(1); }
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
       else if (e.key === 'ArrowDown' && reasonWindowShown(cur())) { e.preventDefault(); nextReasonPage(); }   // 이유 창이 보일 때: 이유 다음 장
