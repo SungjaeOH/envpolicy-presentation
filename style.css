@@ -8,6 +8,7 @@
      [data-round="1|2"]                                    1차 투표·결과 / 2차 투표·결과 (발표 화면과 휴대폰 모두)
      [data-char="haesol|yoon|field|kang"]                  인물별 요소
      [data-route="A|B|C"]                                  루트별 요소
+     .routes__item.is-open / .is-locked / .is-actual       엔딩 목록에서 해금된 루트 / 안 열린 루트 / 실제 역사 루트
      .is-current / .is-past                                대화·문단의 현재 줄 / 지나간 줄
      .is-up / .is-down / .is-flat                          호감도 오름 / 내림 / 그대로
    ============================================================ */
@@ -69,6 +70,7 @@ body.view-host .stage { padding-bottom: 10em; }
 .bullets, .steps { padding-left: 1.3em; }
 .timeline, .facts { display: grid; grid-template-columns: max-content 1fr; gap: .35em 1em; }
 .timeline dt, .facts dt { font-weight: 700; }
+.timeline__row { display: contents; }
 
 .lobby__join { display: flex; flex-wrap: wrap; gap: 2em; align-items: center; margin: 1em 0; }
 .qr svg { display: block; width: 100%; height: auto; }
@@ -135,7 +137,23 @@ body.view-host .feed__item { cursor: pointer; }
 .score-rule { color: var(--muted); font-size: .9em; }
 .route-banner { margin: 1em 0; padding: .8em 1em; border: 2px solid var(--fg); border-radius: var(--radius); }
 .route-banner__name { font-size: 1.4em; }
-.actual-history { margin-top: 1em; padding-top: .8em; border-top: 1px solid var(--line); }
+.actual-history { margin-top: .7em; padding-top: .5em; border-top: 1px solid var(--line); }
+.actual-history h3 { margin-top: .4em; }
+.intro__field, .intro__next { margin-top: .8em; }
+.intro__next { font-weight: 700; }
+.routes { list-style: none; padding: 0; display: grid; gap: .5em; }
+.routes__item { padding-left: .8em; border-left: 3px solid var(--line); }
+.routes__item.is-open { border-left-color: var(--accent); }
+.routes__item.is-locked { color: var(--muted); }
+.routes__mark { margin-right: .6em; font-size: .85em; font-weight: 700; }
+.routes__actual { margin-left: .6em; font-size: .85em; font-weight: 700; color: var(--up); }
+.routes__outcome, .routes__relation { display: block; }
+.routes__relation { font-size: .85em; color: var(--muted); }
+.routes--brief { gap: .25em; }
+.routes-title { margin-top: .6em; }
+.timeline--after { font-size: .9em; }
+.criteria h3 { margin-top: .8em; }
+.criteria h3 small { margin-left: .4em; }
 .aftermath, .compare { list-style: none; padding: 0; display: grid; gap: .7em; }
 .aftermath__log { margin: .1em 0 0; }
 .aftermath__source { color: var(--muted); font-size: .85em; }
@@ -180,6 +198,9 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .summary__stage { margin: 0 0 .2em; }
 
 @media (min-width: 900px) {
+  /* 실제 역사의 연표는 두 단으로 */
+  .timeline--after { display: block; column-count: 2; column-gap: 2.5em; }
+  .timeline--after .timeline__row { display: grid; grid-template-columns: 3em 1fr; gap: 0 .8em; break-inside: avoid; margin-bottom: .3em; }
   .tally { grid-template-columns: repeat(3, 1fr); align-items: start; }   /* 결과는 선택지를 나란히 (1차 셋, 2차 둘) */
   .tally[data-count="2"] { grid-template-columns: repeat(2, 1fr); }
 }

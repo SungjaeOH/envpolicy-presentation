@@ -64,7 +64,7 @@
   addScene({ id: 'cast', type: 'cast', label: '등장인물' });
   addScene({ id: 'howto', type: 'howto', label: '진행 방식' });
   CONTENT.cases.forEach(function (c) {
-    addScene({ id: c.id + '-intro', type: 'caseIntro', caseId: c.id, label: c.short + ' · 배경' });
+    addScene({ id: c.id + '-intro', type: 'caseIntro', caseId: c.id, label: c.short + ' · 프롤로그' });
     c.stages.forEach(function (st, i) {
       const key = c.id + '_' + st.id;
       const pre = c.short + ' · Stage ' + (i + 1) + ' · ';
@@ -298,7 +298,8 @@
 
   function stepsOf(sc) {
     if (sc.type === 'situation') return 1 + STAGE[sc.key].st.dialogue.length;
-    if (sc.type === 'unlock') return 3;                         // 점수 → 루트 → 실제 역사
+    if (sc.type === 'unlock') return 3;                         // 점수와 세 루트 개요 → 루트 해금 → 실제 역사
+    if (sc.type === 'compare') return 2;                        // 우리 반과 실제 역사의 루트 → 실제 역사를 세 기준으로
     if (sc.type === 'cutscene') {
       const r = endingRouteFor(sc.caseId);
       return r ? Math.max(1, CASE[sc.caseId].routes[r].cutscene.length) : 1;
@@ -730,6 +731,27 @@
       withIntro ? h('p', { class: 'route-banner__intro' }, T(cs.routes[r].intro)) : null,
       h('p', { class: 'route-banner__relation' }, CONTENT.routes[r].relation));
   }
+  /* 엔딩 목록: 세 루트의 개요를 모두 보여 줌 (자세한 엔딩 장면은 해금된 루트만 이어짐)
+     opt.open = 해금된 루트(아직 공개 전이면 비움) / opt.actual = 실제 역사 루트(표시할 때만)
+     opt.brief = 한 줄씩만(루트 이름 · 기존 시나리오 이름). 개요를 이미 본 뒤에 씀 */
+  function routeList(cs, opt) {
+    return h('ol', { class: 'routes' + (opt.brief ? ' routes--brief' : '') }, ['A', 'B', 'C'].map(function (r) {
+      const isOpen = opt.open === r, isActual = opt.actual === r;
+      return h('li', { class: 'routes__item' + (isOpen ? ' is-open' : '') + (opt.open && !isOpen ? ' is-locked' : '') + (isActual ? ' is-actual' : ''), 'data-route': r },
+        opt.open ? h('span', { class: 'routes__mark' }, isOpen ? '🔓 해금' : '🔒 미해금') : null,
+        h('strong', { class: 'routes__name' }, CONTENT.routes[r].name + ' 〈' + CONTENT.routes[r].title + '〉'),
+        opt.brief
+          ? h('span', { class: 'routes__short' }, ' · ' + cs.outcomes[r][0])
+          : [h('span', { class: 'routes__outcome' }, cs.outcomes[r][0] + ' — ' + cs.outcomes[r][1]),
+             h('span', { class: 'routes__relation' }, CONTENT.routes[r].relation)],
+        isActual ? h('span', { class: 'routes__actual' }, cs.actual.near ? '실제 역사에 가까움' : '실제 역사') : null);
+    }));
+  }
+  function timelineList(rows, cls) {
+    return h('dl', { class: 'timeline' + (cls ? ' ' + cls : '') }, rows.map(function (r) {
+      return h('div', { class: 'timeline__row' }, h('dt', null, r[0]), h('dd', null, T(r[1])));
+    }));
+  }
   function playerList() {
     const ids = playerIds().sort(function (a, b) { return (S.players[a].t || 0) - (S.players[b].t || 0); });
     if (!ids.length) return h('p', { class: 'empty' }, '아직 입장한 사람이 없습니다.');
@@ -828,14 +850,21 @@
         h('h3', null, '루트'),
         h('p', { class: 'score-rule' }, T(hw.rule)));
     },
+    /* 사례 소개 = 프롤로그. 투표 전에 결말이 보이지 않게 Stage 1 직전까지만 보여 줌
+       (그 뒤의 연표와 결말이 담긴 문구는 루트 해금 장면의 '실제 역사'에서 나옴) */
     caseIntro: function (c) {
       const cs = CASE[c.sc.caseId];
+      const first = cs.stages[0], fd = CHAR.field;
       return h('section', { class: 'scene scene--case-intro' },
         h('header', { class: 'scene__head' },
+          plain(cs.episode) ? h('p', { class: 'scene__case' }, T(cs.episode)) : null,
           h('h2', { class: 'scene__title' }, cs.title),
-          h('p', { class: 'scene__sub' }, T(cs.tagline))),
+          plain(cs.teaser) ? h('p', { class: 'scene__sub' }, T(cs.teaser)) : null),
         h('p', { class: 'background' }, T(cs.background)),
-        h('dl', { class: 'timeline' }, cs.timeline.map(function (r) { return [h('dt', null, r[0]), h('dd', null, T(r[1]))]; })));
+        h('h3', null, '지금까지의 이야기'),
+        timelineList(cs.timeline || []),
+        fd ? h('p', { class: 'intro__field' }, '이번 사례의 ' + fd.emoji + ' ' + fd.name + ': ' + cs.fieldRole) : null,
+        first ? h('p', { class: 'intro__next' }, '이야기는 Stage 1. ', T(first.title), ' (' + first.period + ')에서 시작합니다.') : null);
     },
     situation: function (c) {
       const sg = STAGE[c.sc.key];
@@ -909,33 +938,45 @@
           ac.note ? [' — ', T(ac.note)] : null),
         h('p', { class: 'actual__class' }, '우리 반: 1차 ' + line(st.choices, sum.n1) + ' → 2차 ' + line(st.final.choices, sum.n2)));
     },
+    /* 0단계: 점수 합산과 세 루트의 개요 → 1단계: 해금된 루트 → 2단계: 실제 역사(결말 문구와 나머지 연표) */
     unlock: function (c) {
       const cs = CASE[c.sc.caseId];
       const sum = caseSummary(cs.id);
+      const ar = cs.actual.route;
       const el = h('section', { class: 'scene scene--unlock' },
         h('header', { class: 'scene__head' },
           h('p', { class: 'scene__case' }, cs.title),
-          h('h2', { class: 'scene__title' }, '점수 합산')));
+          h('h2', { class: 'scene__title' }, c.step >= 1 && sum ? '루트 해금' : '점수 합산'),
+          c.step === 1 && sum ? h('p', { class: 'scene__sub score-line' }, '합계 ' + sum.total + '점 / 만점 ' + sum.max + '점 = ' + sum.pct + '%') : null));
       if (!sum) { el.appendChild(h('p', { class: 'empty' }, '투표가 없어 루트를 정할 수 없습니다.')); return el; }
-      el.appendChild(h('ul', { class: 'score-sum' },
-        cs.stages.map(function (st, i) {
-          const s = stageSummary(cs.id + '_' + st.id);
-          return h('li', null, 'Stage ' + (i + 1) + ': ' + s.total + '점 / ' + s.max + '점 (' + s.voters + '명)');
-        }),
-        h('li', { class: 'score-sum__total' }, '합계: ', h('strong', null, sum.total + '점'), ' / 만점 ' + sum.max + '점 = ', h('strong', null, sum.pct + '%'))));
-      el.appendChild(h('p', { class: 'score-rule' }, T(CONTENT.howto.rule)));
-      if (c.step >= 1) {
+      const totalLine = h('li', { class: 'score-sum__total' }, '합계: ', h('strong', null, sum.total + '점'), ' / 만점 ' + sum.max + '점 = ', h('strong', null, sum.pct + '%'));
+      if (c.step === 0) {
+        el.appendChild(h('ul', { class: 'score-sum' },
+          cs.stages.map(function (st, i) {
+            const s = stageSummary(cs.id + '_' + st.id);
+            return h('li', null, 'Stage ' + (i + 1) + ': ' + s.total + '점 / ' + s.max + '점 (' + s.voters + '명)');
+          }),
+          totalLine));
+        el.appendChild(h('p', { class: 'score-rule' }, T(CONTENT.howto.rule)));
+        el.appendChild(h('h3', null, '엔딩 목록 ', h('small', null, '이 중 하나가 열립니다')));
+        el.appendChild(routeList(cs, {}));
+        return el;
+      }
+      el.appendChild(h('h3', { class: 'routes-title' }, '엔딩 목록'));
+      el.appendChild(routeList(cs, { open: sum.route, actual: c.step >= 2 ? ar : null, brief: true }));
+      if (c.step === 1) {
         el.appendChild(routeBanner(cs, sum.route, true));
         const sp = personalSpread(cs.id);
         if (CONFIG.showPersonalRoute && sp.n) el.appendChild(h('p', { class: 'spread' }, '각자 점수로 보면: 루트 A ' + sp.A + '명 · 루트 B ' + sp.B + '명 · 루트 C ' + sp.C + '명'));
       }
       if (c.step >= 2) {
-        const ar = cs.actual.route;
+        const after = cs.timelineAfter || [];
         el.appendChild(h('div', { class: 'actual-history' },
-          h('h3', null, '실제 역사'),
+          h('h3', null, '실제 역사', plain(cs.tagline) ? [' — ', T(cs.tagline)] : null),
           h('p', null, h('strong', null, CONTENT.routes[ar].name + ' 〈' + CONTENT.routes[ar].title + '〉' + (cs.actual.near ? '에 근접' : '')),
             ' · ' + cs.outcomes[ar][0]),
           h('p', null, T(cs.actual.text)),
+          after.length ? timelineList(after, 'timeline--after') : null,
           h('p', { class: 'actual-history__match' }, sum.route === ar ? '우리 반의 선택은 실제 역사와 같은 루트입니다.' : '우리 반의 선택은 실제 역사와 다른 루트입니다.')));
       }
       return el;
@@ -974,20 +1015,47 @@
         return h('p', { class: 'big-question' }, T(rt.question));
       });
     },
-    compare: function () {
-      return h('section', { class: 'scene scene--compare' },
-        h('h2', { class: 'scene__title' }, '두 사례 비교'),
-        h('ul', { class: 'compare' }, CONTENT.cases.map(function (cs) {
+    /* 0단계: 사례별 우리 반 루트와 실제 역사 루트 → 1단계: 실제 역사를 세 기준(3대 프레임)으로 나란히 */
+    compare: function (c) {
+      const routeName = function (r) { return CONTENT.routes[r].name + ' 〈' + CONTENT.routes[r].title + '〉'; };
+      const el = h('section', { class: 'scene scene--compare' },
+        h('header', { class: 'scene__head' },
+          h('h2', { class: 'scene__title' }, '두 사례 비교'),
+          h('p', { class: 'scene__sub' }, c.step === 0 ? '우리 반이 연 엔딩과 실제 역사'
+            : '실제 역사(' + CONTENT.cases.map(function (cs) { return cs.short + ' 루트 ' + cs.actual.route + (cs.actual.near ? '에 근접' : ''); }).join(' · ') + ')를 세 기준으로 나란히 놓으면')));
+      if (c.step === 0) {
+        el.appendChild(h('ul', { class: 'compare' }, CONTENT.cases.map(function (cs) {
           const sum = caseSummary(cs.id);
           const ar = cs.actual.route;
           return h('li', { class: 'compare__case', 'data-case': cs.id },
             h('h3', null, cs.title),
             h('p', null, '우리 반: ', sum
-              ? h('strong', null, CONTENT.routes[sum.route].name + ' 〈' + CONTENT.routes[sum.route].title + '〉')
+              ? h('strong', null, routeName(sum.route))
               : h('span', { class: 'empty' }, '투표 없음'),
               sum ? ' · ' + cs.outcomes[sum.route][0] + ' (' + sum.total + '점 / ' + sum.max + '점, ' + sum.pct + '%)' : ''),
-            h('p', null, '실제 역사: ', h('strong', null, CONTENT.routes[ar].name + ' 〈' + CONTENT.routes[ar].title + '〉' + (cs.actual.near ? '에 근접' : '')), ' · ' + cs.outcomes[ar][0]));
+            h('p', null, '실제 역사: ', h('strong', null, routeName(ar) + (cs.actual.near ? '에 근접' : '')), ' · ' + cs.outcomes[ar][0]));
         })));
+        return el;
+      }
+      const cmp = CONTENT.compare || {};
+      el.appendChild(h('div', { class: 'criteria' }, (cmp.rows || []).map(function (row, i) {
+        return [
+          h('h3', null, CONTENT.frameLabels[i] || '', cmp.questions && cmp.questions[i] ? h('small', null, ' ', T(cmp.questions[i])) : null),
+          h('ul', { class: 'bullets' }, CONTENT.cases.map(function (cs) {
+            return plain(row[cs.id]) ? h('li', { 'data-case': cs.id }, h('strong', null, cs.short), ' — ', T(row[cs.id])) : null;
+          })),
+        ];
+      })));
+      el.appendChild(h('h3', null, '실제 역사에서 네 사람의 호감도'));
+      el.appendChild(h('ul', { class: 'bullets compare__affinity' }, CONTENT.cases.map(function (cs) {
+        const rt = cs.routes[cs.actual.route];
+        return h('li', { 'data-case': cs.id }, h('strong', null, cs.short), ' — ',
+          rt.affinity.map(function (a, k) {
+            const ch = CHAR[a.who];
+            return [k ? ' · ' : '', h('span', { 'data-char': a.who }, ch.emoji + ' ' + ch.name + ' ', T(a.level))];
+          }));
+      })));
+      return el;
     },
     conclusion: function (c) {
       return h('section', { class: 'scene scene--conclusion' },
