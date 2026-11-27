@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>두근두근 진실 공략전</title>
+<link rel="icon" href="data:,">
+<!--
+  파일
+    style.css      디자인
+    config.js      Firebase 값과 설정
+    content.js     화면에 나오는 글 전부 (대본은 여기만 고치면 됨)
+    app.js         화면 전환·투표·집계·실시간 연결
+    qrcode.min.js  QR 라이브러리 (손대지 않음)
+
+  화면
+    참가자 화면 : 이 페이지 주소 그대로 (QR이 가리키는 곳)
+    발표자 화면 : 주소 뒤에 ?view=host    (→ ← 키로 장면 이동)
+    발표 화면   : 주소 뒤에 ?view=screen  (조작 버튼 없이 따라가기만 함)
+-->
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app"><p class="boot" style="padding:1em">불러오는 중…</p></div>
+<noscript><p style="padding:1em">이 페이지는 자바스크립트가 켜져 있어야 합니다.</p></noscript>
+<script>
+/* 파일을 고치다 생긴 오류를 화면에 보여 줌 (빈 화면으로 멈춰 있지 않게).
+   예) content.js 에서 쉼표나 따옴표가 빠지면 몇 번째 줄인지 알려 줌 */
+(function () {
+  var shown = false;
+  function show(msg) {
+    if (shown) return;                                   // 첫 오류만 (뒤따르는 오류는 그 결과일 뿐)
+    shown = true;
+    var box = document.createElement('div');
+    box.id = 'load-error';
+    box.setAttribute('role', 'alert');
+    box.style.cssText = 'margin:1em;padding:1em;border:2px solid #b00020;border-radius:8px;background:#fff;color:#111;font:16px/1.6 system-ui,sans-serif;white-space:pre-wrap';
+    box.textContent = msg;
+    document.body.insertBefore(box, document.body.firstChild);
+  }
+  window.addEventListener('error', function (e) {
+    if (window.__dgdReady) return;                       // 화면이 뜬 뒤의 오류는 콘솔에만 남김
+    var t = e.target;
+    if (t && t !== window && t.tagName === 'SCRIPT') {
+      show('파일을 불러오지 못했습니다: ' + (t.getAttribute('src') || '') + '\n파일 이름이 바뀌었거나 빠지지 않았는지 확인해 주세요.');
+      return;
+    }
+    if (t && t !== window) return;                       // 그 밖의 자원(css 등)은 넘어감
+    if (!e.filename && /^Script error\.?$/.test(e.message || '')) return;   // 다른 곳에서 끼어든 스크립트
+    var file = String(e.filename || '').split('#')[0].split('?')[0].split('/').pop() || '이 페이지';
+    show(file + (e.lineno ? ' ' + e.lineno + '번째 줄 근처에' : '에') + ' 오류가 있습니다.\n' + (e.message || '') +
+      '\n고친 곳에서 쉼표(,)나 따옴표(\')가 빠지지 않았는지 확인해 주세요.');
+  }, true);
+})();
+</script>
+<script src="config.js"></script>
+<script src="content.js"></script>
+<script src="app.js"></script>
+<script src="qrcode.min.js"></script>
+</body>
+</html>

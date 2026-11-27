@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "sessions": {
+      "$sid": {
+        ".read": "now < 1798729200000",
+        ".write": "now < 1798729200000",
+        "players": {
+          "$pid": {
+            ".validate": "newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 20 && newData.child('dept').isString() && newData.child('dept').val().length > 0 && newData.child('dept').val().length <= 30"
+          }
+        },
+        "votes": {
+          "$stage": {
+            "$pid": {
+              ".validate": "root.child('sessions').child($sid).child('state').child('open').val() === $stage && newData.child('c').isNumber() && newData.child('c').val() >= 0 && newData.child('c').val() <= 2 && (!newData.child('r').exists() || (newData.child('r').isString() && newData.child('r').val().length <= 100))"
+            }
+          }
+        }
+      }
+    }
+  }
+}
