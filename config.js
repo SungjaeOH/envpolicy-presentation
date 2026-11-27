@@ -38,6 +38,7 @@ const CONFIG = {
   personalCut: { A: 1, B: 3 },
 
   showPolicyOnVote: true,  /* 투표할 때 대사 아래에 원래 선택지 문구(배제·검증·수용 등)를 같이 보여 줌. 대사만 보이려면 false */
+  typeSpeed: 35,            /* 대사가 한 글자 나오는 데 걸리는 시간(ms). 0 이면 타자 효과 없이 한 번에 */
   reasonMax: 100,          /* 한 줄 이유 최대 글자 수 (늘리려면 core/firebase-rules.json 의 100 도 같이 바꿔야 함) */
   reasonRequired: true,    /* 투표할 때 이유를 꼭 적게 함(1차·2차 모두). 안 적어도 되게 하려면 false */
   reasonMin: 2,            /* 이유의 최소 글자 수(공백 제외) */

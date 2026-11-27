@@ -11,6 +11,8 @@
      .routes__item.is-open / .is-locked / .is-actual       엔딩 목록에서 해금된 루트 / 안 열린 루트 / 실제 역사 루트
      .is-current / .is-past                                대화·문단의 현재 줄 / 지나간 줄
      .is-up / .is-down / .is-flat                          호감도 오름 / 내림 / 그대로
+     .vn__stage[data-bg="saemangeum|taiwan"]             대사 장면의 무대(사례별 배경 그림 자리)
+     .vn__box / .vn__name                                  아래 대화창 / 이름표
      main.stage[data-enter="scene|step"]                   장면(또는 단계)이 막 바뀐 순간에만 붙음. 전환 효과는 맨 아래 "전환 효과"에 모여 있음
    ============================================================ */
 :root {
@@ -255,6 +257,76 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .speakers + .dialogue { margin-top: .6em; }
 .speakers + .dialogue .dialogue__line.is-current .dialogue__text { font-size: 1.2em; }
 
+/* ---------- 미연시 화면 ----------
+   대사 장면: 위 무대(.vn__stage, 배경 그림 자리) + 아래 대화창(.vn__box, 이름표 .vn__name). 지금은 색만 임시 */
+.vn__narration { margin: .2em 0 .7em; color: var(--muted); font-style: italic; }
+.vn__stage { display: flex; align-items: flex-end; min-height: 32vh; padding: 1em 1.2em .4em; border: 3px solid var(--fg); border-bottom: 0; border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, #eef1f4, #dfe5ea); }
+.vn__stage[data-bg="saemangeum"] { background: linear-gradient(180deg, #e6eef5 0%, #e6eef5 55%, #cfc6b4 56%, #bfb39c 100%); }   /* 하늘과 갯벌(임시) */
+.vn__stage[data-bg="taiwan"] { background: linear-gradient(180deg, #e7efe3 0%, #cfdcc6 60%, #a9bf9d 100%); }                  /* 숲(임시) */
+.vn__stage .speakers { width: 100%; margin: 0; min-height: 0; }
+.vn .speakers__portrait { width: 3.2em; height: 3.2em; font-size: 1.7em; background: rgba(255,255,255,.75); }
+.vn .speakers__char.is-speaking .speakers__portrait { width: 4.6em; height: 4.6em; font-size: 2.6em; }
+.vn__box { position: relative; min-height: 6.5em; padding: 1.5em 1.8em 1.3em; border: 3px solid var(--fg); border-radius: 0 0 12px 12px; background: #fff; }
+.vn__name { position: absolute; top: -1em; left: 1.2em; margin: 0; padding: .15em .9em; border-radius: 6px; background: var(--fg); color: #fff; font-weight: 700; }
+.vn__name small { color: #ddd; }
+.vn .dialogue { margin: 0; padding: 0; border: 0; }
+.vn .dialogue__line.is-past { display: none; }
+.vn .dialogue__who { display: none; }
+.vn .dialogue__line.is-current .dialogue__text { font-size: 1.3em; line-height: 1.6; }
+.vn .dialogue__line--system { font-size: 1.1em; }
+.untyped { visibility: hidden; }
+.vn__next { position: absolute; right: 1em; bottom: .5em; font-size: .8em; animation: dgd-blink 1s steps(2) infinite; }
+.vn__box:has(.is-typing) .vn__next { visibility: hidden; }
+@keyframes dgd-blink { 50% { opacity: 0; } }
+
+/* 호감도 팝업: 2차 결과에 들어올 때 인물 위로 ❤️ +2 / 💔 -1 이 떠올랐다 사라짐 */
+.cast__char { position: relative; }
+.cast__pop { display: none; position: absolute; left: 50%; top: -.4em; transform: translateX(-50%); font-size: 1.3em; font-weight: 700; white-space: nowrap; pointer-events: none; }
+@keyframes dgd-float { 0% { opacity: 0; transform: translate(-50%, .6em) scale(.7); } 20% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 75% { opacity: 1; transform: translate(-50%, -1.2em); } 100% { opacity: 0; transform: translate(-50%, -1.8em); } }
+.stage[data-enter="scene"] .scene--result2 .cast__pop { display: block; animation: dgd-float 2.2s 1s ease-out both; }
+
+/* 사례 시작 타이틀 카드: 검은 화면에 EPISODE 와 사례 이름이 떴다가 사라짐 */
+.title-card { display: none; }
+@keyframes dgd-card { 0%, 65% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
+@keyframes dgd-card-text { from { opacity: 0; letter-spacing: .4em; } to { opacity: 1; letter-spacing: .08em; } }
+.stage[data-enter="scene"] > .title-card { position: fixed; inset: 0; z-index: 16; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3em;
+  background: #000; color: #fff; pointer-events: none; animation: dgd-card 2.4s ease-in both; }
+.title-card__ep { margin: 0; font-size: 1.1em; letter-spacing: .08em; opacity: .8; animation: dgd-card-text .8s ease-out both; }
+.title-card__title { margin: 0; font-size: 2.6em; font-weight: 700; animation: dgd-card-text .8s .2s ease-out both; }
+
+/* 타이틀 화면(입장) */
+.scene--lobby { text-align: center; }
+.scene--lobby .game-title { font-size: 2.6em; }
+.scene--lobby .lobby__join { justify-content: center; text-align: left; }
+.scene--lobby .players { justify-content: center; }
+.lobby__press { margin: .6em 0 0; font-weight: 700; animation: dgd-blink 1.4s steps(2) infinite; }
+
+/* 선택지: 미연시 선택 버튼처럼 가운데에 크게 */
+.scene--vote .choices { max-width: 48em; margin: 0 auto; }
+.scene--vote .choice { padding: .7em 1.2em; border: 2px solid var(--fg); border-radius: 10px; background: #fff; box-shadow: 0 3px 0 var(--fg); }
+.ballot__choice { box-shadow: 0 2px 0 var(--line); }
+.ballot__choice.is-selected { box-shadow: 0 2px 0 var(--accent); }
+.ballot__choice.is-selected .choice__line::before { content: "▶ "; color: var(--accent); }
+
+/* 엔딩: CLEAR 카드, 엔딩 목록은 앨범처럼 세 칸 */
+.route-clear { margin: .3em 0 0; font-size: 1.7em; font-weight: 800; letter-spacing: .08em; text-align: center; line-height: 1.2; }
+.scene--unlock .route-banner { margin: .4em 0 .6em; padding: .6em 1em; }
+.scene--unlock .route-banner p, .scene--unlock .route-banner h2 { margin-bottom: .3em; }
+.routes--brief { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6em; }
+.routes--brief .routes__item { padding: .5em .8em; border: 2px solid var(--line); border-radius: 10px; }
+.routes--brief .routes__item.is-open { border-color: var(--fg); }
+.routes--brief .routes__item.is-locked { background: var(--soft); }
+.routes--brief .routes__mark, .routes--brief .routes__name, .routes--brief .routes__actual { display: block; margin: 0; }
+.stage[data-enter="step"] .route-clear { animation: dgd-pop .7s ease-out both; }
+
+/* THE END */
+.scene--the-end { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.the-end__title { margin: 0; font-size: 4em; font-weight: 800; letter-spacing: .15em; }
+.the-end__game { margin: .6em 0 0; font-size: 1.3em; }
+.the-end__credit { margin: .3em 0 0; color: var(--muted); }
+.stage[data-enter="step"] .scene--the-end { animation: dgd-fade 1.5s ease-out both; }
+
 /* ---------- 이유 모아 보기 (한 화면에 흩어진 쪽지) ----------
    선택지별 쪽지 색: [data-choice="0|1|2"]. 투표 중에는 선택지를 모르므로 한 가지 색 */
 body.view-host .reason-window__title { cursor: zoom-in; }
@@ -328,5 +400,6 @@ body.view-host .reason-zoom { bottom: 0; cursor: zoom-out; }
 .reason-wall.is-fresh .wall-note { animation: dgd-note .35s var(--delay, 0ms) ease-out both; }
 .reason-zoom.is-fresh .reason-zoom__card { animation: dgd-pop .3s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
-  .stage[data-enter] *, .stage[data-enter] *::before, .reason-zoom, .reason-zoom__card, .reason-wall, .wall-note { animation: none !important; }
+  .stage[data-enter] *, .stage[data-enter] *::before, .reason-zoom, .reason-zoom__card, .reason-wall, .wall-note, .vn__next, .lobby__press { animation: none !important; }
+  .stage[data-enter] > .title-card { display: none; }
 }

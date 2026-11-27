@@ -306,7 +306,7 @@
       const r = endingRouteFor(sc.caseId);
       return r ? Math.max(1, CASE[sc.caseId].routes[r].cutscene.length) : 1;
     }
-    if (sc.type === 'conclusion') return CONTENT.conclusion.paragraphs.length;
+    if (sc.type === 'conclusion') return CONTENT.conclusion.paragraphs.length + 1;   // 문단들 → THE END
     return 1;
   }
   function cur() {
@@ -316,7 +316,7 @@
     const step = Math.min(Math.max(0, st.step | 0), steps - 1);
     return { idx: sc.index, sc: sc, step: step, steps: steps, open: st.open || null, peek: st.peek || null, feed: st.feed !== false, rp: st.rp | 0,
       zoom: st.zoom && st.zoom.k && st.zoom.p ? { k: String(st.zoom.k), p: String(st.zoom.p) } : null,
-      wall: st.wall ? String(st.wall) : null };
+      wall: st.wall ? String(st.wall) : null, typed: st.typed ? String(st.typed) : null };
   }
 
   /* ============================================================
@@ -470,11 +470,12 @@
     // 같은 사례의 엔딩 장면 안에서 움직일 때는 "루트 보기"에서 고른 루트를 유지
     const keepPeek = c.peek && ENDING_TYPES[sc.type] && ENDING_TYPES[c.sc.type] && sc.caseId === c.sc.caseId;
     // 투표 장면에 들어가면 그 투표(1차 또는 2차)가 열리고, 나가면 닫힘
-    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0, zoom: null, wall: null });
+    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0, zoom: null, wall: null, typed: null });
   }
   function go(delta) {
     if (!S.sync || VIEW !== 'host') return;
     const c = cur();
+    if (delta > 0 && typingActive()) return finishTyping();      // 대사가 아직 타자 중이면 → 는 그 줄을 다 보여 주기만 함
     if (delta > 0) {
       if (c.step < c.steps - 1) return setState({ step: c.step + 1 });
       if (c.idx < SCENES.length - 1) return enter(c.idx + 1, 0);
@@ -487,6 +488,39 @@
   function toggleFeed() { return setState({ feed: !cur().feed }); }
   /* 결과 장면의 이유 창을 다음 장으로 (마지막 장 다음은 첫 장) */
   function reasonWindowShown(c) { return c.sc.type === 'result1' || (c.sc.type === 'result2' && c.step >= 1); }
+  /* 타자 효과: 대사가 한 글자씩 나옴. 발표자가 → 를 누르면 먼저 그 줄을 다 보여 주고(발표 화면도 같이), 한 번 더 누르면 다음 대사.
+     자동 검사(브라우저 자동화)에서는 주소에 typing=1 이 있을 때만 켬 */
+  const TYPE_ON = (CONFIG.typeSpeed | 0) > 0 && (!navigator.webdriver || Q.has('typing'));
+  let typing = { key: '', start: 0, raf: 0, done: true };
+  function typeKey(c) { return c.sc.id + ':' + c.step; }
+  function typingActive() { return TYPE_ON && !typing.done && typing.key === typeKey(cur()); }
+  function finishTyping() { typing.done = true; return setState({ typed: typeKey(cur()) }); }
+  function runTyping() {
+    if (typing.raf) cancelAnimationFrame(typing.raf);
+    typing.raf = 0;
+    const el = document.querySelector('.vn .dialogue__line.is-current .dialogue__text');
+    if (!TYPE_ON || !el || VIEW === 'play') { typing.done = true; return; }
+    const c = cur(), key = typeKey(c);
+    if (typing.key !== key) typing = { key: key, start: performance.now(), raf: 0, done: false };
+    if (c.typed === key) typing.done = true;
+    if (typing.done) return;
+    const orig = Array.prototype.slice.call(el.childNodes), full = el.textContent;
+    const shown = h('span', { class: 'typed' }), rest = h('span', { class: 'untyped' });
+    el.replaceChildren(shown, rest);
+    el.classList.add('is-typing');
+    const tick = function () {
+      if (!el.isConnected) return;
+      const n = Math.floor((performance.now() - typing.start) / CONFIG.typeSpeed);
+      if (typing.done || n >= full.length || cur().typed === key) {
+        typing.done = true; typing.raf = 0;
+        el.replaceChildren.apply(el, orig); el.classList.remove('is-typing');
+        return;
+      }
+      shown.textContent = full.slice(0, n); rest.textContent = full.slice(n);
+      typing.raf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
   /* 이유 모아 보기: 이 투표의 이유를 한 화면에 흩어 놓음(발표 화면도 같이). 투표 중이거나 이유 창이 보일 때만 */
   function wallAllowed(c) { return !!c.sc.vkey && (c.sc.type === 'vote' || reasonWindowShown(c)); }
   function openWall(vkey) { return setState({ wall: vkey, zoom: null }); }
@@ -695,7 +729,9 @@
         h('span', { class: 'cast__name' }, ch.name),
         ch.id === 'field' && caseId ? h('span', { class: 'cast__role' }, CASE[caseId].fieldRole) : null,
         meter(sums[ch.id] || 0),
-        delta ? h('span', { class: 'cast__delta ' + signClass(delta[ch.id]) }, '이번 Stage ' + fmtSigned(delta[ch.id])) : null);
+        delta ? h('span', { class: 'cast__delta ' + signClass(delta[ch.id]) }, '이번 Stage ' + fmtSigned(delta[ch.id])) : null,
+        delta ? h('span', { class: 'cast__pop ' + signClass(delta[ch.id]), 'aria-hidden': 'true' },
+          (delta[ch.id] > 0 ? '❤️ ' : delta[ch.id] < 0 ? '💔 ' : '💬 ') + fmtSigned(delta[ch.id])) : null);
     }));
   }
   /* 대화창. step 번째 줄까지 보여 줌. 지나간 줄은 is-past (디자인에서 숨겨도 됨) */
@@ -716,6 +752,18 @@
         h('span', { class: 'speakers__name' }, ch.name, ch.id === 'field' && caseId ? h('small', null, ' ' + CASE[caseId].fieldRole) : null),
         on && ln.mood ? h('span', { class: 'speakers__mood' }, ln.mood) : null);
     }));
+  }
+  /* 미연시 화면: 위는 인물이 선 무대(사례별 배경 자리), 아래는 이름표가 붙은 대화창. 대화창에는 지금 대사만 보임 */
+  function vnStage(lines, step, caseId) {
+    const ln = lines[Math.min(step, lines.length - 1)] || {};
+    const ch = CHAR[ln.who];
+    return [
+      h('div', { class: 'vn__stage', 'data-bg': caseId || '' }, speakerRow(lines, step, caseId)),
+      h('div', { class: 'vn__box', 'data-char': ch ? ln.who : 'system' },
+        ch ? h('p', { class: 'vn__name' }, ch.emoji + ' ' + ch.name, ln.who === 'field' && caseId ? h('small', null, ' ' + CASE[caseId].fieldRole) : null) : null,
+        dialogueBox(lines, step, caseId),
+        h('span', { class: 'vn__next', 'aria-hidden': 'true' }, '▼')),
+    ];
   }
   function dialogueBox(lines, step, caseId) {
     const box = h('div', { class: 'dialogue' });
@@ -928,6 +976,7 @@
         gameTitle(),
         h('p', { class: 'game-subtitle' }, CONTENT.subtitle),
         h('p', { class: 'game-team' }, CONTENT.team),
+        h('p', { class: 'lobby__press' }, '▶ PRESS START — 휴대폰으로 QR을 찍어 입장'),
         h('div', { class: 'lobby__join' },
           qrBox(url, 'qr--large'),
           h('div', { class: 'lobby__how' },
@@ -988,7 +1037,7 @@
     caseIntro: function (c) {
       const cs = CASE[c.sc.caseId];
       const first = cs.stages[0], fd = CHAR.field;
-      return h('section', { class: 'scene scene--case-intro' },
+      return [h('section', { class: 'scene scene--case-intro' },
         h('header', { class: 'scene__head' },
           plain(cs.episode) ? h('p', { class: 'scene__case' }, T(cs.episode)) : null,
           h('h2', { class: 'scene__title' }, cs.title),
@@ -997,17 +1046,26 @@
         h('h3', null, '지금까지의 이야기'),
         timelineList(cs.timeline || []),
         fd ? h('p', { class: 'intro__field' }, '이번 사례의 ' + fd.emoji + ' ' + fd.name + ': ' + cs.fieldRole) : null,
-        first ? h('p', { class: 'intro__next' }, '이야기는 Stage 1. ', T(first.title), ' (' + first.period + ')에서 시작합니다.') : null);
+        first ? h('p', { class: 'intro__next' }, '이야기는 Stage 1. ', T(first.title), ' (' + first.period + ')에서 시작합니다.') : null),
+        h('div', { class: 'title-card', 'aria-hidden': 'true' },
+          plain(cs.episode) ? h('p', { class: 'title-card__ep' }, T(cs.episode)) : null,
+          h('p', { class: 'title-card__title' }, cs.title))];
     },
+    /* 상황: 첫 단계는 상황 설명, 그다음부터는 미연시 화면(인물이 선 무대 + 아래 대화창) */
     situation: function (c) {
       const sg = STAGE[c.sc.key];
+      if (c.step >= 1) {
+        return h('section', { class: 'scene scene--situation scene--vn vn' },
+          sceneHead(c),
+          h('p', { class: 'vn__narration' }, T(sg.st.scene)),
+          vnStage(sg.st.dialogue, c.step - 1, c.sc.caseId));
+      }
       return h('section', { class: 'scene scene--situation' },
         sceneHead(c),
         h('p', { class: 'scene__question' }, T(sg.st.question)),
         h('ul', { class: 'bullets' }, sg.st.situation.map(function (s) { return h('li', null, T(s)); })),
         h('p', { class: 'scene__narration' }, T(sg.st.scene)),
-        c.step >= 1 ? speakerRow(sg.st.dialogue, c.step - 1, c.sc.caseId) : castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx)),
-        c.step >= 1 ? dialogueBox(sg.st.dialogue, c.step - 1, c.sc.caseId) : null);
+        castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx)));
     },
     /* 1차 투표(3선지)와 2차 투표(2선지)가 같은 틀을 씀. c.sc.round 로 구분 */
     vote: function (c) {
@@ -1103,6 +1161,7 @@
       el.appendChild(h('h3', { class: 'routes-title' }, '엔딩 목록'));
       el.appendChild(routeList(cs, { open: sum.route, actual: c.step >= 2 ? ar : null, brief: true }));
       if (c.step === 1) {
+        el.appendChild(h('p', { class: 'route-clear', 'data-route': sum.route }, 'ROUTE ' + sum.route + ' CLEAR'));
         el.appendChild(routeBanner(cs, sum.route, true));
         const sp = personalSpread(cs.id);
         if (CONFIG.showPersonalRoute && sp.n) el.appendChild(h('p', { class: 'spread' }, '각자 점수로 보면: 루트 A ' + sp.A + '명 · 루트 B ' + sp.B + '명 · 루트 C ' + sp.C + '명'));
@@ -1121,7 +1180,7 @@
     },
     cutscene: function (c) {
       return endingScene(c, '엔딩 대화', function (cs, rt) {
-        return [h('p', { class: 'route-banner__intro' }, T(rt.intro)), speakerRow(rt.cutscene, c.step, cs.id), dialogueBox(rt.cutscene, c.step, cs.id)];
+        return [h('p', { class: 'vn__narration route-banner__intro' }, T(rt.intro)), vnStage(rt.cutscene, c.step, cs.id)];
       });
     },
     aftermath: function (c) {
@@ -1196,6 +1255,13 @@
       return el;
     },
     conclusion: function (c) {
+      const n = CONTENT.conclusion.paragraphs.length;
+      if (c.step >= n) {
+        return h('section', { class: 'scene scene--the-end' },
+          h('p', { class: 'the-end__title' }, 'THE END'),
+          h('p', { class: 'the-end__game' }, CONTENT.title, ' ', h('small', null, CONTENT.titleSub)),
+          h('p', { class: 'the-end__credit' }, CONTENT.team));
+      }
       return h('section', { class: 'scene scene--conclusion' },
         h('h2', { class: 'scene__title' }, T(CONTENT.conclusion.title)),
         CONTENT.conclusion.paragraphs.map(function (p, i) {
@@ -1208,7 +1274,7 @@
     const cs = CASE[c.sc.caseId];
     const sum = caseSummary(cs.id);
     const r = endingRouteFor(cs.id);
-    const el = h('section', { class: 'scene scene--ending scene--' + c.sc.type, 'data-route': r || '' });
+    const el = h('section', { class: 'scene scene--ending scene--' + c.sc.type + (c.sc.type === 'cutscene' ? ' scene--vn vn' : ''), 'data-route': r || '' });
     if (!r) {
       el.appendChild(h('header', { class: 'scene__head' }, h('p', { class: 'scene__case' }, cs.title), h('h2', { class: 'scene__title' }, label)));
       el.appendChild(h('p', { class: 'empty' }, '투표가 없어 루트를 정할 수 없습니다. 아래 "루트 보기"에서 A·B·C를 골라 볼 수 있습니다.'));
@@ -1232,7 +1298,7 @@
       main.setAttribute('data-enter', lastShown && lastShown.split(':')[0] === c.sc.id ? 'step' : 'scene');
       lastShown = at;
     }
-    main.appendChild(SCREEN[c.sc.type](c));
+    append(main, SCREEN[c.sc.type](c));
     const wall = reasonWall(c);
     if (wall) main.appendChild(wall);
     const zoom = reasonZoom(c);
@@ -1723,7 +1789,7 @@
     if (sig === lastSig) return;
     lastSig = sig;
     chrome.view.replaceChildren(VIEW === 'play' ? renderPlay() : renderScreen());
-    if (VIEW !== 'play') fitWall();
+    if (VIEW !== 'play') { fitWall(); runTyping(); }
     const sceneNow = (S.state && S.state.scene) || '';
     if (sceneNow !== lastScene) { lastScene = sceneNow; S.ui.cell = null; try { window.scrollTo(0, 0); } catch (e) { /* 무시 */ } }   // 장면이 바뀌면 맨 위로
   }
