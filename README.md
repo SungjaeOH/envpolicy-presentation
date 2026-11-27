@@ -4,19 +4,19 @@
 
 ## 주소
 
-- 참가자 화면: `https://아이디.github.io/저장소이름/` — QR이 가리키는 주소
-- 발표자 화면: 위 주소 뒤에 `?view=host` — 발표 화면 + 아래쪽 조작 버튼. → ← 키로 장면을 넘깁니다
-- 발표 화면: 위 주소 뒤에 `?view=screen` — 조작 버튼 없이 따라가기만 하는 화면
+- 참가자 화면: https://sungjaeoh.github.io/dgd-game/ — QR이 가리키는 주소
+- 발표자 화면: https://sungjaeoh.github.io/dgd-game/?view=host — 발표 화면 + 아래쪽 조작 버튼. → ← 키로 장면을 넘깁니다
+- 발표 화면: https://sungjaeoh.github.io/dgd-game/?view=screen — 조작 버튼 없이 따라가기만 하는 화면
 
 ## 파일
 
 - `content.js` — 화면에 나오는 글 전부. 대본은 이 파일만 고칩니다.
 - `style.css` — 디자인. 맨 위 주석에 장면·인물·루트별로 쓸 수 있는 속성이 적혀 있습니다.
-- `config.js` — Firebase 값과 설정(루트 경계, 임시 표시 등)
+- `config.js` — 실시간 DB 주소와 설정(루트 경계, 임시 표시 등)
 - `app.js` — 화면 전환, 투표, 집계, 실시간 연결
 - `index.html` — 위 파일들을 불러오는 틀
 - `qrcode.min.js` — QR 코드 라이브러리(손대지 않음)
-- `firebase-rules.json` — Firebase 규칙 탭에 붙여 넣는 내용
+- `firebase-rules.json` — Firebase 규칙 탭에 게시해 둔 내용의 사본
 
 ## 고치는 법
 
@@ -28,22 +28,13 @@
 
 쉼표나 따옴표가 빠지면 페이지에 "content.js 몇 번째 줄 근처에 오류가 있습니다"라고 뜹니다. 그 줄을 확인하면 됩니다.
 
-## 처음 한 번 하는 설정
+## 설정 (이미 해 둔 것)
 
-### 깃허브 페이지 켜기
+- 깃허브 페이지: 저장소 **Settings → Pages**에서 **main** 브랜치의 **/ (root)**를 배포하도록 켜 두었습니다.
+- Firebase: 프로젝트 `dgd-game`에 Realtime Database를 싱가포르(asia-southeast1)로 만들고, 규칙 탭에 `firebase-rules.json` 내용을 게시해 두었습니다.
+- `config.js`의 `databaseURL`에 그 데이터베이스 주소를 넣어 두었습니다. 이 주소 하나로 연결됩니다.
 
-1. 저장소의 **Settings → Pages**로 갑니다.
-2. Source는 **Deploy from a branch**, Branch는 **main**과 **/ (root)**로 두고 **Save**를 누릅니다.
-3. 잠시 뒤 같은 화면에 주소가 뜹니다.
-
-### Firebase 연결 (실시간 투표용)
-
-1. console.firebase.google.com 에서 프로젝트를 만듭니다.
-2. Databases & Storage → Realtime Database → Create database. 위치는 싱가포르(asia-southeast1)를 고릅니다. 한국에서 가장 가깝고, 만든 뒤에는 바꿀 수 없습니다.
-3. 규칙(Rules) 탭에 `firebase-rules.json` 내용을 붙여 넣고 게시합니다.
-4. 프로젝트 개요에서 웹 앱(`</>`)을 등록하면 나오는 firebaseConfig 값을 `config.js`의 `firebase`에 넣습니다. `databaseURL`이 없으면 Realtime Database 화면 위쪽에 보이는 주소를 넣습니다.
-
-`config.js`의 `databaseURL`이 비어 있으면 데모 모드입니다. 서버 없이 같은 브라우저의 탭끼리만 연결되고, 흐름을 확인하는 용도입니다.
+`config.js`의 `databaseURL`을 비우면 데모 모드가 됩니다. 서버 없이 같은 브라우저의 탭끼리만 연결되고, 흐름을 확인하는 용도입니다.
 
 ## 발표 당일
 
@@ -57,5 +48,5 @@
 ## 알아 둘 것
 
 - 저장소와 페이지는 누구나 볼 수 있습니다. 응답(이름·학과·투표)은 저장소가 아니라 Firebase에 저장됩니다.
-- 규칙은 2026년 12월 31일까지만 읽기·쓰기를 허용합니다. 그 뒤에 쓰려면 `firebase-rules.json`의 시각(숫자)을 바꿔 다시 붙여 넣습니다.
+- 규칙은 2026년 12월 31일까지만 읽기·쓰기를 허용합니다. 그 뒤에 쓰려면 Firebase 규칙 탭에서 시각(숫자)을 바꿔 다시 게시합니다.
 - `hostKey`는 발표자 화면을 실수로 여는 것을 막는 정도입니다. 저장소가 공개라 값도 보입니다.
