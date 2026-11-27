@@ -41,6 +41,8 @@ const CONFIG = {
   reasonMax: 100,          /* 한 줄 이유 최대 글자 수 (늘리려면 firebase-rules.json 의 100 도 같이 바꿔야 함) */
   reasonRequired: true,    /* 투표할 때 이유를 꼭 적게 함(1차·2차 모두). 안 적어도 되게 하려면 false */
   reasonMin: 2,            /* 이유의 최소 글자 수(공백 제외) */
+  reasonAnonymous: true,   /* 발표 화면·발표자 화면의 이유 창에 이름과 학과를 안 보여 줌. 이름을 같이 보이려면 false
+                              (응답 내려받기 CSV 에는 누가 쓴 이유인지 그대로 들어감) */
   reasonsPerPage: 6,       /* 결과 장면의 이유 창에 한 장에 보이는 개수. ↓ 키나 "이유 다음 장" 버튼으로 넘김 */
   reasonsLive: 4,          /* 투표 중 이유 창에 보이는 개수(방금 들어온 것부터) */
   showDraftMarks: true,    /* 임시 문구 옆에 "임시" 표시 (발표 전에는 false) */

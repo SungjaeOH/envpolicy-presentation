@@ -134,6 +134,7 @@ body.view-host .stage { padding-bottom: 10em; }
 .reason-window__empty { margin: .3em 0 0; }
 .feed { list-style: none; padding: 0; margin: .4em 0 0; display: grid; gap: .25em 1.5em; font-size: .85em; }
 .feed__who { font-weight: 700; margin-right: .5em; }
+.reason-window--anon .feed__item::before { content: "•"; margin-right: .5em; color: var(--muted); }
 .feed__pick { margin-right: .5em; padding: 0 .4em; border: 1px solid var(--line); border-radius: 999px; font-size: .9em; white-space: nowrap; }
 .result__detail { display: flex; flex-wrap: wrap; gap: .6em 2.5em; align-items: center; margin-top: .7em; }
 .scene--result2 .cast { margin-top: .6em; }

@@ -745,7 +745,7 @@
       page = Math.min(Math.max(0, opt.page | 0), pages - 1);
       items = items.slice(page * per, page * per + per);
     }
-    return h('div', { class: 'reason-window', 'data-live': opt.live ? '1' : null, 'data-page': page, 'data-pages': pages },
+    return h('div', { class: 'reason-window' + (CONFIG.reasonAnonymous ? ' reason-window--anon' : ''), 'data-live': opt.live ? '1' : null, 'data-page': page, 'data-pages': pages },
       h('p', { class: 'reason-window__title' }, opt.live ? '방금 들어온 이유' : '투표한 이유', ' ',
         h('small', null, total + '개' + (pages > 1 ? ' · ' + (page + 1) + ' / ' + pages + '장' : ''))),
       total ? h('ul', { class: 'feed' }, items.map(function (it) {
@@ -753,7 +753,7 @@
         return h('li', { class: 'feed__item', 'data-pid': it.pid, 'data-choice': opt.live ? null : it.c,
           title: VIEW === 'host' ? '누르면 화면에서 숨김' : null,
           onclick: VIEW === 'host' ? function () { setHidden(vkey, it.pid, true); } : null },
-          h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),
+          CONFIG.reasonAnonymous ? null : h('span', { class: 'feed__who' }, it.name, ' ', h('small', null, it.dept)),   // 익명이면 이름·학과를 화면에 넣지 않음
           ch ? h('span', { class: 'feed__pick' }, NUM[it.c] + ' ' + ch.tag) : null,
           h('span', { class: 'feed__text' }, it.r));
       })) : h('p', { class: 'empty reason-window__empty' }, opt.live ? '아직 들어온 이유가 없습니다.' : '적힌 이유가 없습니다.'));
@@ -1248,7 +1248,7 @@
       form.appendChild(h('label', { for: 'reason', class: 'ballot__reason-label' },
         CONFIG.reasonRequired ? '고른 이유 한 줄 (꼭 적어 주세요)' : '이유 한 줄 (안 적어도 됩니다)'));
       form.appendChild(reason);
-      form.appendChild(h('p', { class: 'ballot__reason-note' }, '적은 이유는 발표 화면에 이름과 함께 나옵니다.'));
+      form.appendChild(h('p', { class: 'ballot__reason-note' }, CONFIG.reasonAnonymous ? '적은 이유는 발표 화면에 이름 없이 나옵니다.' : '적은 이유는 발표 화면에 이름과 함께 나옵니다.'));
       if (S.ui.focusReason) { S.ui.focusReason = false; setTimeout(function () { try { reason.focus(); } catch (e) {} }, 0); }
       if (sn.error) form.appendChild(h('p', { class: 'notice notice--error' }, sn.error));
       if (sn.slow) form.appendChild(h('p', { class: 'notice' }, '연결이 느립니다. 투표가 열려 있는 동안 다시 연결되면 제출됩니다.'));
