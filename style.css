@@ -255,6 +255,29 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .speakers + .dialogue { margin-top: .6em; }
 .speakers + .dialogue .dialogue__line.is-current .dialogue__text { font-size: 1.2em; }
 
+/* ---------- 이유 모아 보기 (한 화면에 흩어진 쪽지) ----------
+   선택지별 쪽지 색: [data-choice="0|1|2"]. 투표 중에는 선택지를 모르므로 한 가지 색 */
+body.view-host .reason-window__title { cursor: zoom-in; }
+.reason-window__all { margin-left: .6em; font-size: .8em; }
+.reason-wall { position: fixed; inset: 0; z-index: 18; display: flex; flex-direction: column; padding: 1.2vh 2vw 2vh; background: #f7f5ef; }
+.reason-wall__head { display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.5em; }
+.reason-wall__title { margin: 0; font-size: 1.15em; font-weight: 700; flex: 1; min-width: 12em; }
+.reason-wall__legend { list-style: none; display: flex; gap: 1em; margin: 0; padding: 0; font-size: .85em; }
+.reason-wall__swatch { display: inline-block; width: .9em; height: .9em; margin-right: .3em; border: 1px solid rgba(0,0,0,.25); border-radius: 3px; vertical-align: -.1em; }
+.reason-wall__close { font-size: 15px; }
+.reason-wall__board { position: relative; flex: 1; min-height: 0; margin-top: 1vh; }
+.reason-wall__empty { position: absolute; top: 45%; width: 100%; text-align: center; }
+.wall-note { position: absolute; left: 50%; top: 50%; box-sizing: border-box; width: max-content; max-width: 15em; padding: .5em .75em; transform: translate(-50%, -50%) rotate(var(--rot, 0deg));
+  background: #fff8d6; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,.14); line-height: 1.4; overflow: hidden; }
+body.view-host .wall-note { cursor: zoom-in; }
+.wall-note:hover { z-index: 1; }
+.wall-note__pick { display: block; margin-bottom: .2em; font-size: .72em; font-weight: 700; opacity: .75; }
+.wall-note__who { display: block; font-size: .72em; font-weight: 700; }
+.wall-note__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; overflow-wrap: anywhere; }
+.wall-note[data-choice="0"], .reason-wall__legend [data-choice="0"] .reason-wall__swatch { background: #dfe8fb; }
+.wall-note[data-choice="1"], .reason-wall__legend [data-choice="1"] .reason-wall__swatch { background: #fff1b8; }
+.wall-note[data-choice="2"], .reason-wall__legend [data-choice="2"] .reason-wall__swatch { background: #dcf1d7; }
+
 /* ---------- 이유 확대 ---------- */
 .feed__item { cursor: default; }
 body.view-host .feed__item { cursor: zoom-in; }
@@ -298,7 +321,10 @@ body.view-host .reason-zoom { bottom: 0; cursor: zoom-out; }
 .stage[data-enter] .conclusion__p.is-current { animation: dgd-rise .45s ease-out both; }
 .stage[data-enter="scene"][data-type="ask"] .big-question { animation: dgd-fade 1s .2s ease-out both; }
 .reason-zoom.is-fresh { animation: dgd-fade .2s ease-out both; }
+@keyframes dgd-note { from { opacity: 0; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(.6); } to { opacity: 1; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)); } }
+.reason-wall.is-fresh { animation: dgd-fade .25s ease-out both; }
+.reason-wall.is-fresh .wall-note { animation: dgd-note .35s var(--delay, 0ms) ease-out both; }
 .reason-zoom.is-fresh .reason-zoom__card { animation: dgd-pop .3s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
-  .stage[data-enter] *, .stage[data-enter] *::before, .reason-zoom, .reason-zoom__card { animation: none !important; }
+  .stage[data-enter] *, .stage[data-enter] *::before, .reason-zoom, .reason-zoom__card, .reason-wall, .wall-note { animation: none !important; }
 }
