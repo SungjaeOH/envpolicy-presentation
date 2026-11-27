@@ -1,5 +1,6 @@
 /* ============================================================
    ③ 동작 — 화면 전환, 투표, 집계, 실시간 연결
+   한 Stage의 흐름: 상황 → 1차 투표(3선지) → 1차 결과 → 추가 자료 공개 → 2차 투표(2선지) → 2차 결과·점수 → 실제 선택
    화면은 세 가지:
      참가자 화면  (기본. 학생이 QR로 여는 화면)
      발표자 화면  (주소 뒤에 ?view=host)   = 발표 화면 + 아래 조작 버튼
@@ -13,7 +14,8 @@
   const DEFAULT_SESSION = CONFIG.session || 'main';
   const SESSION = (Q.get('s') || DEFAULT_SESSION).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24) || 'main';
   const DEMO = Q.has('demo') || !(CONFIG.firebase && CONFIG.firebase.databaseURL);
-  const MAX_SCORE = 2;                       // 한 번의 선택에서 받을 수 있는 최고 점수
+  const MAX_SCORE = 2;                       // 한 Stage에서 받을 수 있는 최고 점수
+  const SCORE_WHY = ['배제', '추가 자료를 보고 수용', '처음부터 수용'];   // 0점·1점·2점이 되는 경우
   const NUM = ['①', '②', '③', '④'];
   let VIEW = 'play';
 
@@ -25,6 +27,22 @@
     c.stages.forEach(function (st, i) { STAGE[c.id + '_' + st.id] = { c: c, st: st, i: i, key: c.id + '_' + st.id }; });
   });
   const STAGE_KEYS = Object.keys(STAGE);
+  /* 스테이지마다 투표가 두 번. 1차는 votes/<스테이지 키>, 2차는 votes/<스테이지 키>_r2 에 저장 */
+  const R2 = '_r2';
+  const VOTE_KEYS = [];
+  STAGE_KEYS.forEach(function (k) { VOTE_KEYS.push(k, k + R2); });
+  /* 2차 투표 내용(final)이 내용 파일에 없거나 선택지가 둘이 아니면 기본 문구로 채움 */
+  STAGE_KEYS.forEach(function (k) {
+    const st = STAGE[k].st;
+    const f = st.final || (st.final = {});
+    if (!Array.isArray(f.choices) || f.choices.length !== 2) {
+      f.choices = [
+        { accept: false, tag: '배제', line: '받아들이지 않겠습니다.', policy: '' },
+        { accept: true, tag: '수용', line: '받아들이겠습니다.', policy: '' },
+      ];
+    }
+    if (!f.question) f.question = st.question;
+  });
   let AFF_MAX = 1;                           // 호감도 막대의 최대 범위(한 사례 기준)
   CONTENT.cases.forEach(function (c) {
     let m = 0;
@@ -50,10 +68,14 @@
     c.stages.forEach(function (st, i) {
       const key = c.id + '_' + st.id;
       const pre = c.short + ' · Stage ' + (i + 1) + ' · ';
+      // 상황 → 1차 투표(3선지) → 1차 결과 → 추가 자료 공개 → 2차 투표(2선지) → 2차 결과·점수 → 실제 선택
+      // vkey = 그 장면이 다루는 투표가 저장되는 칸
       addScene({ id: key + '-situation', type: 'situation', caseId: c.id, key: key, label: pre + '상황' });
-      addScene({ id: key + '-vote', type: 'vote', caseId: c.id, key: key, label: pre + '투표' });
-      addScene({ id: key + '-result', type: 'result', caseId: c.id, key: key, label: pre + '결과' });
+      addScene({ id: key + '-vote1', type: 'vote', round: 1, caseId: c.id, key: key, vkey: key, label: pre + '1차 투표' });
+      addScene({ id: key + '-result1', type: 'result1', round: 1, caseId: c.id, key: key, vkey: key, label: pre + '1차 결과' });
       addScene({ id: key + '-extra', type: 'extra', caseId: c.id, key: key, label: pre + (st.extra.kind === 'hidden' ? '히든 이벤트' : '추가 자료') });
+      addScene({ id: key + '-vote2', type: 'vote', round: 2, caseId: c.id, key: key, vkey: key + R2, label: pre + '2차 투표' });
+      addScene({ id: key + '-result2', type: 'result2', round: 2, caseId: c.id, key: key, vkey: key + R2, label: pre + '2차 결과' });
       addScene({ id: key + '-actual', type: 'actual', caseId: c.id, key: key, label: pre + '실제 선택' });
     });
     addScene({ id: c.id + '-unlock', type: 'unlock', caseId: c.id, label: c.short + ' · 루트 해금' });
@@ -77,7 +99,7 @@
     me: { id: '', name: '', dept: '', joined: false, checked: false, editing: false, notice: '', error: '' },
     myVotes: {},          // 참가자 본인의 투표
     draft: {},            // 참가자가 고르는 중인 값
-    sends: {},            // 스테이지별 제출 상태 { sending, slow, error }
+    sends: {},            // 투표별 제출 상태 { sending, slow, error }
     ui: { resetArmed: false },
     loaded: {},           // 서버에서 한 번이라도 받아 온 항목
   };
@@ -298,25 +320,58 @@
   function playerIds() { return Object.keys(S.players || {}); }
   function playerCount() { return playerIds().length; }
 
-  /* 한 스테이지의 표 수, 반 점수, 4인 호감도 변화(반 평균) */
+  function validPick(v, n) { return !!v && typeof v.c === 'number' && v.c >= 0 && v.c < n && v.c % 1 === 0; }
+  function choicesOf(key, round) { const st = STAGE[key].st; return round === 2 ? st.final.choices : st.choices; }
+
+  /* 한 사람의 한 Stage 점수 (팀 문서 6-3의 표). v1 = 1차 투표, v2 = 2차 투표
+       2차에서 배제                          → 0점
+       1차부터 직접 수용(2점짜리)이고 2차도 수용 → 2점
+       그 밖에 2차에서 수용 (자료를 보고 수용)    → 1점
+     2차 투표를 하지 않았으면 점수 없음(null). 점수 방식을 바꾸려면 이 함수만 고치면 됨 */
+  function stageScore(key, v1, v2) {
+    const st = STAGE[key].st;
+    if (!validPick(v2, st.final.choices.length)) return null;
+    if (!st.final.choices[v2.c].accept) return 0;
+    return validPick(v1, st.choices.length) && st.choices[v1.c].score === MAX_SCORE ? MAX_SCORE : 1;
+  }
+  /* 그 점수에 대한 4인의 반응 = 그 점수가 붙은 1차 선택지의 호감도 값 */
+  function affinityOf(key, score) {
+    const list = STAGE[key].st.choices;
+    for (let i = 0; i < list.length; i++) if (list[i].score === score) return list[i].affinity || {};
+    return {};
+  }
+
+  /* 한 스테이지의 집계
+       n1·voters1 = 1차 선택지별 표 수와 투표 인원 / n2·voters2 = 2차
+       move[i][j] = 1차에서 i번, 2차에서 j번을 고른 사람 수 / byScore[점수] = 그 점수를 받은 사람 수
+       total·max·voters = 반 점수, 만점, 점수가 매겨진 인원(= 2차 투표자) / aff = 4인 호감도 변화(반 평균) */
   function stageSummary(key) {
     const st = STAGE[key].st;
-    const v = (S.votes && S.votes[key]) || {};
-    const n = st.choices.map(function () { return 0; });
-    let total = 0, voters = 0;
-    Object.keys(v).forEach(function (pid) {
-      if (!S.players[pid]) return;                              // 지워진 참가자의 표는 세지 않음
-      const c = v[pid] ? v[pid].c : null;
-      if (typeof c !== 'number' || !st.choices[c]) return;
-      n[c] += 1; voters += 1; total += st.choices[c].score;
+    const a = (S.votes && S.votes[key]) || {}, b = (S.votes && S.votes[key + R2]) || {};
+    const n1 = st.choices.map(function () { return 0; });
+    const n2 = st.final.choices.map(function () { return 0; });
+    const move = st.choices.map(function () { return st.final.choices.map(function () { return 0; }); });
+    const byScore = [0, 0, 0];
+    let voters1 = 0, voters2 = 0, total = 0;
+    Object.keys(a).forEach(function (pid) {
+      if (!S.players[pid] || !validPick(a[pid], n1.length)) return;   // 지워진 참가자의 표는 세지 않음
+      n1[a[pid].c] += 1; voters1 += 1;
+    });
+    Object.keys(b).forEach(function (pid) {
+      if (!S.players[pid]) return;
+      const sc = stageScore(key, a[pid], b[pid]);
+      if (sc == null) return;
+      n2[b[pid].c] += 1; voters2 += 1; total += sc; byScore[sc] += 1;
+      if (validPick(a[pid], n1.length)) move[a[pid].c][b[pid].c] += 1;
     });
     const aff = {};
     CONTENT.characters.forEach(function (ch) {
       let sum = 0;
-      st.choices.forEach(function (choice, i) { sum += n[i] * ((choice.affinity || {})[ch.id] || 0); });
-      aff[ch.id] = voters ? Math.round(sum / voters * 10) / 10 : 0;
+      byScore.forEach(function (cnt, sc) { sum += cnt * (affinityOf(key, sc)[ch.id] || 0); });
+      aff[ch.id] = voters2 ? Math.round(sum / voters2 * 10) / 10 : 0;
     });
-    return { n0: n[0] || 0, n1: n[1] || 0, n2: n[2] || 0, total: total, voters: voters, max: voters * MAX_SCORE, aff: aff };
+    return { n1: n1, voters1: voters1, n2: n2, voters2: voters2, move: move, byScore: byScore,
+      total: total, voters: voters2, max: voters2 * MAX_SCORE, aff: aff };
   }
 
   /* 반 전체 점수 ÷ 만점 → 루트 */
@@ -332,7 +387,7 @@
     return score <= CONFIG.personalCut.A ? 'A' : score <= CONFIG.personalCut.B ? 'B' : 'C';
   }
 
-  /* 한 사례의 합계. 만점 = 실제로 들어온 표 수 × 2점 (투표 안 한 사람은 계산에서 빠짐) */
+  /* 한 사례의 합계. 만점 = 2차 투표를 한 사람 수 × 2점 (2차 투표를 안 한 사람은 계산에서 빠짐) */
   function caseSummary(caseId) {
     const c = CASE[caseId];
     let total = 0, max = 0;
@@ -341,16 +396,17 @@
     return { total: total, max: max, pct: Math.round(total / max * 1000) / 10, route: routeOf(total, max) };
   }
 
-  /* 각자 점수로 본 루트 분포 (두 스테이지 모두 투표한 사람만) */
+  /* 각자 점수로 본 루트 분포 (두 스테이지 모두 2차 투표까지 한 사람만) */
   function personalSpread(caseId) {
     const c = CASE[caseId];
     const out = { A: 0, B: 0, C: 0, n: 0 };
     playerIds().forEach(function (pid) {
       let score = 0, ok = true;
       c.stages.forEach(function (st) {
-        const v = ((S.votes || {})[c.id + '_' + st.id] || {})[pid];
-        if (!v || !st.choices[v.c]) { ok = false; return; }
-        score += st.choices[v.c].score;
+        const key = c.id + '_' + st.id;
+        const sc = stageScore(key, ((S.votes || {})[key] || {})[pid], ((S.votes || {})[key + R2] || {})[pid]);
+        if (sc == null) { ok = false; return; }
+        score += sc;
       });
       if (!ok) return;
       out[personalRoute(score)] += 1; out.n += 1;
@@ -364,7 +420,7 @@
     CONTENT.characters.forEach(function (ch) { sums[ch.id] = 0; });
     CASE[caseId].stages.forEach(function (st) {
       const key = caseId + '_' + st.id;
-      if (SCENE_BY_ID[key + '-result'].index > uptoIdx) return;
+      if (SCENE_BY_ID[key + '-result2'].index > uptoIdx) return;       // 2차 결과를 공개한 스테이지까지만
       const a = stageSummary(key).aff;
       CONTENT.characters.forEach(function (ch) { sums[ch.id] += a[ch.id]; });
     });
@@ -385,10 +441,12 @@
     const aff = {};
     CONTENT.characters.forEach(function (ch) { aff[ch.id] = 0; });
     c.stages.forEach(function (st) {
-      const v = S.myVotes[c.id + '_' + st.id];
-      if (!v || !st.choices[v.c]) return;
-      done += 1; score += st.choices[v.c].score;
-      CONTENT.characters.forEach(function (ch) { aff[ch.id] += (st.choices[v.c].affinity || {})[ch.id] || 0; });
+      const key = c.id + '_' + st.id;
+      const sc = stageScore(key, S.myVotes[key], S.myVotes[key + R2]);
+      if (sc == null) return;
+      done += 1; score += sc;
+      const a = affinityOf(key, sc);
+      CONTENT.characters.forEach(function (ch) { aff[ch.id] += a[ch.id] || 0; });
     });
     const complete = done === c.stages.length;
     return { score: score, done: done, complete: complete, route: complete ? personalRoute(score) : null, aff: aff };
@@ -406,8 +464,8 @@
     const c = cur();
     // 같은 사례의 엔딩 장면 안에서 움직일 때는 "루트 보기"에서 고른 루트를 유지
     const keepPeek = c.peek && ENDING_TYPES[sc.type] && ENDING_TYPES[c.sc.type] && sc.caseId === c.sc.caseId;
-    // 투표 장면에 들어가면 그 스테이지 투표가 열리고, 나가면 닫힘
-    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.key : null, peek: keepPeek ? c.peek : null });
+    // 투표 장면에 들어가면 그 투표(1차 또는 2차)가 열리고, 나가면 닫힘
+    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null });
   }
   function go(delta) {
     if (!S.sync || VIEW !== 'host') return;
@@ -432,7 +490,15 @@
     const c = cur();
     const want = {};
     SCENES.forEach(function (sc) {
-      if (sc.type === 'result' && sc.index <= c.idx) want[sc.key] = stageSummary(sc.key);
+      if (sc.type === 'result1' && sc.index <= c.idx) {            // 1차 결과: 선택지별 표 수
+        const s1 = stageSummary(sc.key);
+        want[sc.key] = { n0: s1.n1[0] || 0, n1: s1.n1[1] || 0, n2: s1.n1[2] || 0, voters1: s1.voters1 };
+      }
+      if (sc.type === 'result2' && sc.index <= c.idx) {            // 2차 결과: 표 수와 반 점수
+        const s2 = stageSummary(sc.key);
+        const w = want[sc.key] || (want[sc.key] = {});
+        w.m0 = s2.n2[0] || 0; w.m1 = s2.n2[1] || 0; w.voters = s2.voters; w.total = s2.total; w.max = s2.max;
+      }
       if (sc.type === 'unlock' && (sc.index < c.idx || (sc.index === c.idx && c.step >= 1))) {
         const sum = caseSummary(sc.caseId);
         if (sum) want[sc.caseId] = sum;
@@ -445,10 +511,10 @@
     S.sync.set('results', Object.keys(want).length ? want : null).catch(reportError);
   }
 
-  function clearStageVotes(key) { return S.sync.remove('votes/' + key).catch(reportError); }
+  function clearVotes(vkey) { return S.sync.remove('votes/' + vkey).catch(reportError); }
   function removePlayer(pid) {
     const jobs = [S.sync.remove('players/' + pid)];
-    STAGE_KEYS.forEach(function (k) { if (S.votes[k] && S.votes[k][pid]) jobs.push(S.sync.remove('votes/' + k + '/' + pid)); });
+    VOTE_KEYS.forEach(function (k) { if (S.votes[k] && S.votes[k][pid]) jobs.push(S.sync.remove('votes/' + k + '/' + pid)); });
     return Promise.all(jobs).catch(reportError);
   }
   function setHidden(key, pid, hidden) { return S.sync.set('hide/' + key + '/' + pid, hidden ? true : null).catch(reportError); }
@@ -467,16 +533,17 @@
   function botVote() {
     const c = cur();
     if (c.sc.type !== 'vote') return;
+    const list = choicesOf(c.sc.key, c.sc.round);
     const patch = {};
     playerIds().forEach(function (pid) {
       if (!S.players[pid].bot) return;
-      const pick = Math.floor(Math.random() * STAGE[c.sc.key].st.choices.length);
+      const pick = Math.floor(Math.random() * list.length);
       const v = { c: pick, t: Date.now() };
       if (Math.random() < 0.5) v.r = '테스트 의견 ' + NUM[pick];
       patch[pid] = v;
     });
     if (!Object.keys(patch).length) return;
-    return S.sync.update('votes/' + c.sc.key, patch).catch(reportError);
+    return S.sync.update('votes/' + c.sc.vkey, patch).catch(reportError);
   }
   function removeBots() {
     return Promise.all(playerIds().filter(function (id) { return S.players[id].bot; }).map(removePlayer));
@@ -487,7 +554,7 @@
     const head = ['이름', '학과', '가상 참가자'];
     STAGE_KEYS.forEach(function (k) {
       const p = STAGE[k].c.short + ' S' + (STAGE[k].i + 1);
-      head.push(p + ' 선택', p + ' 점수', p + ' 이유');
+      head.push(p + ' 1차 선택', p + ' 1차 이유', p + ' 2차 선택', p + ' 2차 이유', p + ' 점수');
     });
     CONTENT.cases.forEach(function (c) { head.push(c.short + ' 개인 합계'); });
     const rows = [head];
@@ -496,12 +563,14 @@
       const row = [p.name || '', p.dept || '', p.bot ? 'Y' : ''];
       const sums = {};
       STAGE_KEYS.forEach(function (k) {
-        const v = (S.votes[k] || {})[pid];
-        const ch = v ? STAGE[k].st.choices[v.c] : null;
-        if (ch) {
-          row.push(NUM[v.c] + ' ' + ch.tag, ch.score, v.r || '');
-          sums[STAGE[k].c.id] = (sums[STAGE[k].c.id] || 0) + ch.score;
-        } else { row.push('', '', ''); }
+        const st = STAGE[k].st;
+        const v1 = (S.votes[k] || {})[pid], v2 = (S.votes[k + R2] || {})[pid];
+        const c1 = validPick(v1, st.choices.length) ? st.choices[v1.c] : null;
+        const c2 = validPick(v2, st.final.choices.length) ? st.final.choices[v2.c] : null;
+        const sc = stageScore(k, v1, v2);
+        row.push(c1 ? NUM[v1.c] + ' ' + c1.tag : '', c1 ? v1.r || '' : '',
+          c2 ? NUM[v2.c] + ' ' + c2.tag : '', c2 ? v2.r || '' : '', sc == null ? '' : sc);
+        if (sc != null) sums[STAGE[k].c.id] = (sums[STAGE[k].c.id] || 0) + sc;
       });
       CONTENT.cases.forEach(function (c) { row.push(sums[c.id] == null ? '' : sums[c.id]); });
       rows.push(row);
@@ -545,11 +614,11 @@
       reportError(err);
     });
   }
-  function submitVote(key, choice, reason) {
+  function submitVote(vkey, choice, reason) {
     const v = { c: choice, t: Date.now() };
     const r = String(reason || '').trim().slice(0, CONFIG.reasonMax);
     if (r) v.r = r;
-    return S.sync.set('votes/' + key + '/' + S.me.id, v);
+    return S.sync.set('votes/' + vkey + '/' + S.me.id, v);
   }
 
   /* ============================================================
@@ -600,15 +669,42 @@
     });
     return box;
   }
-  function choiceList(st) {
-    return h('ol', { class: 'choices' }, st.choices.map(function (ch, i) {
+  function choiceList(list) {
+    return h('ol', { class: 'choices', 'data-count': list.length }, list.map(function (ch, i) {
       return h('li', { class: 'choice', 'data-choice': i },
         h('span', { class: 'choice__num' }, NUM[i]),
         h('span', { class: 'choice__line' }, '“', T(ch.line), '”'),
-        CONFIG.showPolicyOnVote ? h('span', { class: 'choice__policy' }, ch.tag + ' · ', T(ch.policy)) : null);
+        CONFIG.showPolicyOnVote ? h('span', { class: 'choice__policy' }, ch.tag, plain(ch.policy) ? [' · ', T(ch.policy)] : null) : null);
     }));
   }
-  /* 학생들이 적은 한 줄 이유. filterChoice 를 주면 그 선택지만 */
+  /* 선택지별 표 수 막대. counts[i] = i번 선택지의 표 수 */
+  function tallyList(list, counts, voters, vkey) {
+    const top = Math.max.apply(null, counts);
+    return h('ol', { class: 'tally', 'data-count': list.length }, list.map(function (ch, i) {
+      const n = counts[i] || 0;
+      const pct = voters ? Math.round(n / voters * 100) : 0;
+      return h('li', { class: 'tally__row' + (n > 0 && n === top ? ' is-top' : ''), 'data-choice': i },
+        h('div', { class: 'tally__label' },
+          h('span', { class: 'choice__num' }, NUM[i]),
+          h('span', { class: 'choice__line' }, '“', T(ch.line), '”'),
+          h('span', { class: 'choice__policy' }, ch.tag)),
+        h('div', { class: 'tally__bar' }, h('span', { class: 'tally__fill', style: 'width:' + pct + '%' })),
+        h('div', { class: 'tally__num' }, n + '명 (' + pct + '%)'),
+        reasons(vkey, { filterChoice: i }));
+    }));
+  }
+  /* 1차에서 고른 것 → 2차에서 고른 것 (두 번 다 투표한 사람 수) */
+  function shiftTable(st, sum) {
+    return h('table', { class: 'shift' },
+      h('caption', null, '1차 선택 → 2차 선택'),
+      h('thead', null, h('tr', null, h('th', null, '1차'),
+        st.final.choices.map(function (ch, j) { return h('th', null, '2차 ' + NUM[j] + ' ' + ch.tag); }))),
+      h('tbody', null, st.choices.map(function (ch, i) {
+        return h('tr', { 'data-choice': i }, h('th', null, NUM[i] + ' ' + ch.tag),
+          sum.move[i].map(function (n, j) { return h('td', { 'data-to': j }, n + '명'); }));
+      })));
+  }
+  /* 학생들이 적은 한 줄 이유. key = 투표가 저장된 칸(1차는 스테이지 키, 2차는 뒤에 _r2). filterChoice 를 주면 그 선택지만 */
   function reasons(key, opt) {
     const v = S.votes[key] || {};
     const hid = S.hide[key] || {};
@@ -726,7 +822,9 @@
         h('p', null, T(hw.lead)),
         h('ol', { class: 'steps' }, hw.steps.map(function (s) { return h('li', null, h('strong', null, T(s[0])), ' — ', T(s[1])); })),
         h('h3', null, '점수'),
-        h('ul', { class: 'bullets' }, hw.scoring.map(function (s) { return h('li', null, h('strong', null, s[0]), ' ' + s[1] + ' — ' + s[2]); })),
+        h('ul', { class: 'bullets' }, hw.scoring.map(function (s) {
+          return h('li', null, h('strong', null, s[0]), ' ' + s[1] + ' — ' + s[2], s[3] ? h('span', { class: 'score-how' }, T(s[3])) : null);
+        })),
         h('h3', null, '루트'),
         h('p', { class: 'score-rule' }, T(hw.rule)));
     },
@@ -749,40 +847,39 @@
         castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx)),
         c.step >= 1 ? dialogueBox(sg.st.dialogue, c.step - 1, c.sc.caseId) : null);
     },
+    /* 1차 투표(3선지)와 2차 투표(2선지)가 같은 틀을 씀. c.sc.round 로 구분 */
     vote: function (c) {
-      const sg = STAGE[c.sc.key];
+      const sg = STAGE[c.sc.key], second = c.sc.round === 2;
       const sum = stageSummary(c.sc.key);
-      return h('section', { class: 'scene scene--vote' },
-        sceneHead(c),
-        h('p', { class: 'scene__question' }, T(sg.st.question)),
-        h('p', { class: 'vote__prompt' }, '어떤 대사로 답할까요? 휴대폰에서 골라 주세요.'),
-        choiceList(sg.st),
+      return h('section', { class: 'scene scene--vote', 'data-round': c.sc.round },
+        sceneHead(c, second ? '2차 투표 · 추가 자료를 본 뒤의 최종 선택' : '1차 투표'),
+        h('p', { class: 'scene__question' }, T(second ? sg.st.final.question : sg.st.question)),
+        h('p', { class: 'vote__prompt' }, second ? '이제 어떻게 할까요? 휴대폰에서 다시 골라 주세요.' : '어떤 대사로 답할까요? 휴대폰에서 골라 주세요.'),
+        choiceList(choicesOf(c.sc.key, c.sc.round)),
         h('div', { class: 'vote__status' },
-          h('p', { class: 'vote__count' }, '투표 ', h('strong', null, String(sum.voters)), ' / ' + playerCount() + '명',
-            c.open === c.sc.key ? '' : ' · 마감'),
+          h('p', { class: 'vote__count' }, '투표 ', h('strong', null, String(second ? sum.voters2 : sum.voters1)), ' / ' + playerCount() + '명',
+            c.open === c.sc.vkey ? '' : ' · 마감'),
           qrBox(joinUrl(), 'qr--small')),
-        c.feed ? reasons(c.sc.key, { limit: 8 }) : null);
+        c.feed ? reasons(c.sc.vkey, { limit: 8 }) : null);
     },
-    result: function (c) {
+    result1: function (c) {
       const sg = STAGE[c.sc.key];
       const sum = stageSummary(c.sc.key);
-      const counts = [sum.n0, sum.n1, sum.n2];
-      const top = Math.max.apply(null, counts);
-      return h('section', { class: 'scene scene--result' },
-        sceneHead(c),
+      return h('section', { class: 'scene scene--result scene--result1', 'data-round': 1 },
+        sceneHead(c, '1차 투표 결과'),
         h('p', { class: 'scene__question' }, T(sg.st.question)),
-        h('ol', { class: 'tally' }, sg.st.choices.map(function (ch, i) {
-          const n = counts[i];
-          const pct = sum.voters ? Math.round(n / sum.voters * 100) : 0;
-          return h('li', { class: 'tally__row' + (n > 0 && n === top ? ' is-top' : ''), 'data-choice': i },
-            h('div', { class: 'tally__label' },
-              h('span', { class: 'choice__num' }, NUM[i]),
-              h('span', { class: 'choice__line' }, '“', T(ch.line), '”'),
-              h('span', { class: 'choice__policy' }, ch.tag + ' · ' + ch.score + '점')),
-            h('div', { class: 'tally__bar' }, h('span', { class: 'tally__fill', style: 'width:' + pct + '%' })),
-            h('div', { class: 'tally__num' }, n + '명 (' + pct + '%)'),
-            reasons(c.sc.key, { filterChoice: i }));
-        })),
+        tallyList(sg.st.choices, sum.n1, sum.voters1, c.sc.vkey),
+        h('p', { class: 'result__note' }, '점수는 추가 자료를 보고 2차 투표까지 마친 뒤에 매겨집니다.'));
+    },
+    result2: function (c) {
+      const sg = STAGE[c.sc.key];
+      const sum = stageSummary(c.sc.key);
+      return h('section', { class: 'scene scene--result scene--result2', 'data-round': 2 },
+        sceneHead(c, '2차 투표 결과'),
+        h('p', { class: 'scene__question' }, T(sg.st.final.question)),
+        tallyList(sg.st.final.choices, sum.n2, sum.voters2, c.sc.vkey),
+        shiftTable(sg.st, sum),
+        h('p', { class: 'result__breakdown' }, '2점(' + SCORE_WHY[2] + ') ' + sum.byScore[2] + '명 · 1점(' + SCORE_WHY[1] + ') ' + sum.byScore[1] + '명 · 0점(' + SCORE_WHY[0] + ') ' + sum.byScore[0] + '명'),
         h('p', { class: 'result__score' }, '이번 Stage 반 점수 ', h('strong', null, sum.total + '점'),
           ' / 만점 ' + sum.max + '점 (' + sum.voters + '명 × ' + MAX_SCORE + '점)'),
         castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx), sum.aff));
@@ -799,17 +896,18 @@
         ex.note ? h('p', { class: 'extra__note' }, T(ex.note)) : null);
     },
     actual: function (c) {
-      const sg = STAGE[c.sc.key];
-      const ac = sg.st.actual;
+      const st = STAGE[c.sc.key].st, ac = st.actual;
       const sum = stageSummary(c.sc.key);
-      const counts = [sum.n0, sum.n1, sum.n2];
+      const f1 = st.choices[ac.first], f2 = st.final.choices[ac.final];
+      const line = function (list, counts) { return list.map(function (ch, i) { return NUM[i] + ' ' + ch.tag + ' ' + counts[i] + '명'; }).join(' / '); };
       return h('section', { class: 'scene scene--actual' },
         sceneHead(c),
         h('h3', null, '실제 선택'),
         h('ul', { class: 'bullets' }, ac.lines.map(function (l) { return h('li', null, T(l)); })),
-        h('p', { class: 'actual__match' }, '가까운 선택지: ', h('strong', null, NUM[ac.choice] + ' ' + sg.st.choices[ac.choice].tag),
+        h('p', { class: 'actual__match' }, '가까운 선택: ',
+          h('strong', null, (f1 ? '1차 ' + NUM[ac.first] + ' ' + f1.tag : '') + (f1 && f2 ? ' → ' : '') + (f2 ? '2차 ' + NUM[ac.final] + ' ' + f2.tag : '')),
           ac.note ? [' — ', T(ac.note)] : null),
-        h('p', { class: 'actual__class' }, '우리 반: ' + sg.st.choices.map(function (ch, i) { return NUM[i] + ' ' + ch.tag + ' ' + counts[i] + '명'; }).join(' / ')));
+        h('p', { class: 'actual__class' }, '우리 반: 1차 ' + line(st.choices, sum.n1) + ' → 2차 ' + line(st.final.choices, sum.n2)));
     },
     unlock: function (c) {
       const cs = CASE[c.sc.caseId];
@@ -921,7 +1019,7 @@
 
   function renderScreen() {
     const c = cur();
-    const main = h('main', { class: 'stage', 'data-scene': c.sc.id, 'data-type': c.sc.type, 'data-case': c.sc.caseId || '', 'data-step': c.step });
+    const main = h('main', { class: 'stage', 'data-scene': c.sc.id, 'data-type': c.sc.type, 'data-case': c.sc.caseId || '', 'data-step': c.step, 'data-round': c.sc.round || '' });
     main.appendChild(SCREEN[c.sc.type](c));
     return main;
   }
@@ -936,13 +1034,20 @@
       cs ? h('p', { class: 'pscene__case' }, cs.title) : null,
       sg ? h('h2', { class: 'pscene__title' }, 'Stage ' + (sg.i + 1) + '. ', T(sg.st.title)) : null);
   }
-  function myChoice(key) {
-    const mine = S.myVotes[key];
-    const ch = mine ? STAGE[key].st.choices[mine.c] : null;
-    if (!ch) return null;
-    return h('div', { class: 'my-choice' },
-      h('p', { class: 'my-choice__line' }, '내 선택: ', h('span', { class: 'choice__num' }, NUM[mine.c]), ' “', T(ch.line), '”'),
+  /* 내가 고른 것. round = 1(1차) 또는 2(2차). 투표하지 않았으면 null */
+  function myChoice(key, round) {
+    const list = choicesOf(key, round);
+    const mine = S.myVotes[round === 2 ? key + R2 : key];
+    if (!validPick(mine, list.length)) return null;
+    return h('div', { class: 'my-choice', 'data-round': round },
+      h('p', { class: 'my-choice__line' }, '내 ' + round + '차 선택: ', h('span', { class: 'choice__num' }, NUM[mine.c]), ' “', T(list[mine.c].line), '”'),
       mine.r ? h('p', { class: 'my-choice__reason' }, '이유: ' + mine.r) : null);
+  }
+  /* 2차 투표 화면 위에 작게 보여 주는 1차 선택 */
+  function myFirst(key) {
+    const st = STAGE[key].st, mine = S.myVotes[key];
+    if (!validPick(mine, st.choices.length)) return h('p', { class: 'my-first' }, '1차 투표는 하지 않았습니다.');
+    return h('p', { class: 'my-first' }, '내 1차 선택: ', h('span', { class: 'choice__num' }, NUM[mine.c]), ' “', T(st.choices[mine.c].line), '”');
   }
   function affinityList(aff, label) {
     return h('div', { class: 'my-affinity' },
@@ -961,7 +1066,7 @@
   function myRouteLine(cs) {
     if (!CONFIG.showPersonalRoute) return null;
     const mc = myCase(cs.id);
-    if (!mc.complete) return h('p', { class: 'my-route' }, '내 선택만 보면: 두 Stage를 모두 투표해야 나옵니다.');
+    if (!mc.complete) return h('p', { class: 'my-route' }, '내 선택만 보면: 두 Stage 모두 2차 투표까지 해야 나옵니다.');
     return h('p', { class: 'my-route' }, '내 선택만 보면: ' + mc.score + '점 → ',
       h('strong', null, CONTENT.routes[mc.route].name + ' 〈' + CONTENT.routes[mc.route].title + '〉'));
   }
@@ -975,19 +1080,25 @@
         c.sc.type === 'situation' ? h('p', { class: 'pscene__question' }, T(STAGE[c.sc.key].st.question)) : null,
         h('p', { class: 'pscene__hint' }, c.sc.type === 'situation' ? '곧 투표가 열립니다. ' + WATCH : WATCH));
     },
+    /* 1차·2차 투표가 같은 틀을 씀. key = 스테이지, vk = 이번 투표가 저장되는 칸 */
     vote: function (c) {
-      const key = c.sc.key, sg = STAGE[key], mine = S.myVotes[key];
-      const wrap = h('section', { class: 'pscene pscene--vote' }, pHead(c), h('p', { class: 'pscene__question' }, T(sg.st.question)));
-      if (c.open !== key) {
+      const key = c.sc.key, vk = c.sc.vkey, round = c.sc.round, second = round === 2, sg = STAGE[key];
+      const list = choicesOf(key, round);
+      const mine = validPick(S.myVotes[vk], list.length) ? S.myVotes[vk] : null;
+      const wrap = h('section', { class: 'pscene pscene--vote', 'data-round': round }, pHead(c),
+        h('p', { class: 'pscene__round' }, second ? '2차 투표 · 최종 선택' : '1차 투표'),
+        h('p', { class: 'pscene__question' }, T(second ? sg.st.final.question : sg.st.question)));
+      if (second) wrap.appendChild(myFirst(key));
+      if (c.open !== vk) {
         wrap.appendChild(h('p', { class: 'notice' }, '투표가 마감되었습니다.'));
-        append(wrap, myChoice(key));
+        append(wrap, myChoice(key, round));
         return wrap;
       }
-      const d = S.draft[key] || (S.draft[key] = { c: mine ? mine.c : null, r: mine && mine.r ? mine.r : '', editing: !mine, touched: false });
-      const sn = S.sends[key] || (S.sends[key] = { sending: false, slow: false, error: '' });   // 이 스테이지의 제출 상태
+      const d = S.draft[vk] || (S.draft[vk] = { c: mine ? mine.c : null, r: mine && mine.r ? mine.r : '', editing: !mine, touched: false });
+      const sn = S.sends[vk] || (S.sends[vk] = { sending: false, slow: false, error: '' });   // 이 투표의 제출 상태
       if (mine && !d.editing && !sn.sending) {
         wrap.appendChild(h('p', { class: 'notice notice--ok' }, '제출했습니다.'));
-        append(wrap, myChoice(key));
+        append(wrap, myChoice(key, round));
         wrap.appendChild(h('button', { type: 'button', class: 'secondary', onclick: function () { d.editing = true; d.touched = true; d.c = mine.c; d.r = mine.r || ''; requestRender(); } }, '선택 바꾸기'));
         return wrap;
       }
@@ -997,7 +1108,7 @@
         if (d.c == null) { sn.error = '대사를 하나 골라 주세요.'; requestRender(); return; }
         sn.sending = true; sn.slow = false; sn.error = ''; requestRender();
         const slowTimer = setTimeout(function () { if (sn.sending) { sn.slow = true; requestRender(); } }, 8000);
-        submitVote(key, d.c, d.r).then(function () {
+        submitVote(vk, d.c, d.r).then(function () {
           clearTimeout(slowTimer); sn.sending = false; sn.slow = false; d.editing = false; d.touched = false; requestRender();
         }, function (err) {
           // 연결이 끊긴 동안 누른 표가 마감 뒤에 도착하면 서버가 받지 않음
@@ -1008,8 +1119,8 @@
         });
       };
       onEnter(form, send);
-      form.appendChild(h('p', { class: 'ballot__prompt' }, '어떤 대사로 답할까요?'));
-      sg.st.choices.forEach(function (ch, i) {
+      form.appendChild(h('p', { class: 'ballot__prompt' }, second ? '추가 자료를 봤습니다. 이제 어떻게 할까요?' : '어떤 대사로 답할까요?'));
+      list.forEach(function (ch, i) {
         const input = h('input', { type: 'radio', name: 'choice', value: String(i), id: 'choice-' + i, checked: d.c === i,
           onchange: function () {
             d.c = i; d.touched = true;
@@ -1019,7 +1130,7 @@
           input,
           h('span', { class: 'choice__num' }, NUM[i]),
           h('span', { class: 'choice__line' }, '“', T(ch.line), '”'),
-          CONFIG.showPolicyOnVote ? h('span', { class: 'choice__policy' }, ch.tag + ' · ', T(ch.policy)) : null));
+          CONFIG.showPolicyOnVote ? h('span', { class: 'choice__policy' }, ch.tag, plain(ch.policy) ? [' · ', T(ch.policy)] : null) : null));
       });
       const reason = h('input', { type: 'text', id: 'reason', class: 'ballot__reason', maxlength: String(CONFIG.reasonMax), value: d.r, autocomplete: 'off',
         oninput: function () { d.r = reason.value; d.touched = true; } });
@@ -1031,18 +1142,35 @@
       wrap.appendChild(form);
       return wrap;
     },
-    afterVote: function (c) {
-      const key = c.sc.key, sg = STAGE[key], mine = S.myVotes[key], res = S.results[key];
-      const wrap = h('section', { class: 'pscene pscene--result' }, pHead(c));
-      if (mine && sg.st.choices[mine.c]) {
-        append(wrap, myChoice(key));
-        wrap.appendChild(affinityList(sg.st.choices[mine.c].affinity || {}, '내 선택에 대한 반응'));
-      } else {
-        wrap.appendChild(h('p', { class: 'notice' }, '이번 Stage는 투표하지 않았습니다.'));
+    /* 1차 결과·추가 자료 장면: 내 1차 선택과 반의 1차 결과 */
+    afterVote1: function (c) {
+      const key = c.sc.key, sg = STAGE[key], res = S.results[key];
+      const wrap = h('section', { class: 'pscene pscene--result', 'data-round': 1 }, pHead(c));
+      const pick = myChoice(key, 1);
+      wrap.appendChild(pick || h('p', { class: 'notice' }, '1차 투표를 하지 않았습니다.'));
+      if (res && res.voters1 != null) {
+        wrap.appendChild(h('p', { class: 'class-result' }, '우리 반 1차: ' +
+          sg.st.choices.map(function (ch, i) { return NUM[i] + ' ' + (res['n' + i] || 0) + '명'; }).join(' · ')));
       }
-      if (res) {
-        wrap.appendChild(h('p', { class: 'class-result' }, '우리 반: ' +
-          sg.st.choices.map(function (ch, i) { return NUM[i] + ' ' + (res['n' + i] || 0) + '명'; }).join(' · ') +
+      wrap.appendChild(h('p', { class: 'pscene__hint' }, c.sc.type === 'extra' ? '추가 자료가 공개됩니다. 곧 2차 투표가 열립니다. ' + WATCH : WATCH));
+      return wrap;
+    },
+    /* 2차 결과·실제 선택 장면: 내 1차→2차 선택, 이번 Stage 내 점수, 반 결과 */
+    afterVote2: function (c) {
+      const key = c.sc.key, sg = STAGE[key], res = S.results[key];
+      const sc = stageScore(key, S.myVotes[key], S.myVotes[key + R2]);
+      const wrap = h('section', { class: 'pscene pscene--result', 'data-round': 2 }, pHead(c));
+      wrap.appendChild(myFirst(key));
+      if (sc == null) {
+        wrap.appendChild(h('p', { class: 'notice' }, '2차 투표를 하지 않아 이번 Stage 점수가 없습니다.'));
+      } else {
+        append(wrap, myChoice(key, 2));
+        wrap.appendChild(h('p', { class: 'my-score' }, '이번 Stage 내 점수: ', h('strong', null, sc + '점'), ' (' + SCORE_WHY[sc] + ')'));
+        wrap.appendChild(affinityList(affinityOf(key, sc), '내 선택에 대한 반응'));
+      }
+      if (res && res.voters != null) {
+        wrap.appendChild(h('p', { class: 'class-result' }, '우리 반 2차: ' +
+          sg.st.final.choices.map(function (ch, i) { return NUM[i] + ' ' + (res['m' + i] || 0) + '명'; }).join(' · ') +
           ' · 반 점수 ' + res.total + '점 / ' + res.max + '점'));
       }
       wrap.appendChild(h('p', { class: 'pscene__hint' }, WATCH));
@@ -1066,9 +1194,12 @@
             h('h3', null, cs.title),
             cs.stages.map(function (st, i) {
               const key = cs.id + '_' + st.id;
-              const mine = S.myVotes[key];
-              const ch = mine ? st.choices[mine.c] : null;
-              return h('p', { class: 'summary__stage' }, 'Stage ' + (i + 1) + ': ', ch ? [NUM[mine.c] + ' ', ch.tag] : '투표 안 함');
+              const v1 = S.myVotes[key], v2 = S.myVotes[key + R2];
+              const c1 = validPick(v1, st.choices.length) ? st.choices[v1.c] : null;
+              const c2 = validPick(v2, st.final.choices.length) ? st.final.choices[v2.c] : null;
+              const sc = stageScore(key, v1, v2);
+              return h('p', { class: 'summary__stage' }, 'Stage ' + (i + 1) + ': ', !c1 && !c2 ? '투표 안 함'
+                : '1차 ' + (c1 ? NUM[v1.c] + ' ' + c1.tag : '안 함') + ' → 2차 ' + (c2 ? NUM[v2.c] + ' ' + c2.tag : '안 함') + (sc == null ? '' : ' (' + sc + '점)'));
             }),
             classRouteLine(cs),
             myRouteLine(cs));
@@ -1076,7 +1207,8 @@
         h('p', { class: 'pscene__hint' }, WATCH));
     },
   };
-  PLAY.result = PLAY.afterVote; PLAY.extra = PLAY.afterVote; PLAY.actual = PLAY.afterVote;
+  PLAY.result1 = PLAY.afterVote1; PLAY.extra = PLAY.afterVote1;
+  PLAY.result2 = PLAY.afterVote2; PLAY.actual = PLAY.afterVote2;
   PLAY.unlock = PLAY.ending;
   Object.keys(ENDING_TYPES).forEach(function (t) { PLAY[t] = PLAY.ending; });
   PLAY.compare = PLAY.summary; PLAY.conclusion = PLAY.summary;
@@ -1164,8 +1296,8 @@
 
     ctl.voteBox = h('span', { class: 'controls__group', hidden: true });
     ctl.feedBtn = h('button', { type: 'button', onclick: toggleFeed });
-    ctl.unhideBtn = h('button', { type: 'button', hidden: true, onclick: function () { const c = cur(); if (c.sc.key) unhideAll(c.sc.key); } });
-    ctl.clearBtn = h('button', { type: 'button', onclick: function () { const c = cur(); if (c.sc.key) clearStageVotes(c.sc.key); } }, '이 Stage 투표 지우기');
+    ctl.unhideBtn = h('button', { type: 'button', hidden: true, onclick: function () { const c = cur(); if (c.sc.vkey) unhideAll(c.sc.vkey); } });
+    ctl.clearBtn = h('button', { type: 'button', onclick: function () { const c = cur(); if (c.sc.vkey) clearVotes(c.sc.vkey); } }, '투표 지우기');
     append(ctl.voteBox, [ctl.feedBtn, ctl.unhideBtn, ctl.clearBtn]);
 
     ctl.resetBtn = h('button', { type: 'button', onclick: function () { S.ui.resetArmed = true; requestRender(); } }, '전체 초기화');
@@ -1201,15 +1333,15 @@
     ctl.routeBox.hidden = !ending;
     Object.keys(ctl.routeBtns).forEach(function (r) { ctl.routeBtns[r].classList.toggle('is-on', (c.peek || '') === r); });
 
-    const staged = !!c.sc.key;
+    const staged = !!c.sc.vkey;                                 // 투표 장면과 그 결과 장면
     ctl.voteBox.hidden = !staged;
     if (staged) {
-      const hiddenCount = Object.keys(S.hide[c.sc.key] || {}).length;
+      const hiddenCount = Object.keys(S.hide[c.sc.vkey] || {}).length;
       ctl.feedBtn.textContent = '투표 중 이유 표시: ' + (c.feed ? '켬' : '끔');
       ctl.feedBtn.hidden = c.sc.type !== 'vote';
       ctl.unhideBtn.hidden = !hiddenCount;
       ctl.unhideBtn.textContent = '숨긴 이유 ' + hiddenCount + '개 다시 보이기';
-      ctl.clearBtn.hidden = !(c.sc.type === 'vote' || c.sc.type === 'result');
+      ctl.clearBtn.textContent = '이 ' + c.sc.round + '차 투표 지우기';
     }
     ctl.resetBtn.hidden = S.ui.resetArmed;
     ctl.resetYes.hidden = !S.ui.resetArmed;
@@ -1288,7 +1420,7 @@
         if (was && !v) { S.me.notice = '입장 정보가 지워졌습니다. 다시 입장해 주세요.'; S.draft = {}; S.sends = {}; }
         requestRender();
       });
-      STAGE_KEYS.forEach(function (k) {
+      VOTE_KEYS.forEach(function (k) {
         listen('votes/' + k + '/' + S.me.id, function (v) {
           const d = S.draft[k];
           if (v) {
@@ -1363,7 +1495,7 @@
   }
 
   /* 점검용으로 몇 가지를 밖에서 볼 수 있게 둠 (브라우저 콘솔에서 DGD 입력) */
-  window.DGD = { S: S, SCENES: SCENES, routeOf: routeOf, personalRoute: personalRoute, buildCsv: buildCsv, session: SESSION, demo: DEMO };
+  window.DGD = { S: S, SCENES: SCENES, VOTE_KEYS: VOTE_KEYS, routeOf: routeOf, personalRoute: personalRoute, stageScore: stageScore, buildCsv: buildCsv, session: SESSION, demo: DEMO };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

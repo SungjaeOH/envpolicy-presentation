@@ -3,6 +3,9 @@
    디자인할 때 쓸 수 있는 고리:
      body.view-host / body.view-screen / body.view-play   화면 종류
      main.stage[data-type][data-case][data-scene][data-step] 지금 장면
+       data-type: lobby question cast howto caseIntro situation vote result1 extra result2 actual
+                  unlock cutscene aftermath frame tradeoff ask compare conclusion
+     [data-round="1|2"]                                    1차 투표·결과 / 2차 투표·결과 (발표 화면과 휴대폰 모두)
      [data-char="haesol|yoon|field|kang"]                  인물별 요소
      [data-route="A|B|C"]                                  루트별 요소
      .is-current / .is-past                                대화·문단의 현재 줄 / 지나간 줄
@@ -114,6 +117,13 @@ body.view-host .stage { padding-bottom: 10em; }
 .vote__status { display: flex; align-items: center; justify-content: space-between; gap: 1em; margin: .8em 0; }
 .vote__count { margin: 0; font-size: 1.4em; }
 .result__score { margin-top: 1em; font-size: 1.15em; }
+.result__note { margin-top: 1em; color: var(--muted); }
+.result__breakdown { margin: .6em 0 0; }
+.shift { margin-top: 1em; border-collapse: collapse; font-size: .85em; }
+.shift caption { text-align: left; color: var(--muted); padding-bottom: .3em; }
+.shift th, .shift td { padding: .25em .8em; border: 1px solid var(--line); text-align: center; font-weight: 400; }
+.shift thead th, .shift tbody th { background: var(--soft); }
+.score-how { display: block; color: var(--muted); font-size: .85em; }
 .feed { list-style: none; padding: 0; margin: .4em 0 0; display: grid; gap: .25em; font-size: .85em; }
 .feed__who { font-weight: 700; margin-right: .5em; }
 body.view-host .feed__item { cursor: pointer; }
@@ -154,6 +164,9 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .pscene__case { color: var(--muted); margin-bottom: .1em; }
 .pscene__title { font-size: 1.3em; }
 .pscene__question { font-weight: 700; }
+.pscene__round { margin-bottom: .2em; font-weight: 700; color: var(--accent); }
+.my-first { color: var(--muted); }
+.my-score { margin: .8em 0; }
 .pscene__hint { color: var(--muted); margin-top: 1em; }
 .ballot { display: grid; gap: .6em; }
 .ballot__prompt { margin: 0; }
@@ -167,7 +180,8 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .summary__stage { margin: 0 0 .2em; }
 
 @media (min-width: 900px) {
-  .tally { grid-template-columns: repeat(3, 1fr); align-items: start; }   /* 결과는 선택지 셋을 나란히 */
+  .tally { grid-template-columns: repeat(3, 1fr); align-items: start; }   /* 결과는 선택지를 나란히 (1차 셋, 2차 둘) */
+  .tally[data-count="2"] { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 700px) {
   .cast, .cast-intro { grid-template-columns: repeat(2, 1fr); }
