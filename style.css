@@ -226,6 +226,35 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .shift-names { margin-top: .6em; padding: .5em .8em; border: 1px dashed var(--muted); border-radius: var(--radius); font-size: .85em; }
 .shift-names__title { margin: 0 0 .4em; font-weight: 700; }
 
+/* ---------- 인물 그림 자리, 한 명씩 소개, 말하는 인물 ----------
+   .portrait 가 그림 자리(지금은 이모지). 예) .portrait[data-char="yoon"] { background: url(yoon.png) center/cover; color: transparent; } */
+.portrait { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; background: var(--soft); line-height: 1; }
+.portrait.has-image { background: none; overflow: hidden; }
+.portrait img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cast-focus { display: flex; gap: 2em; align-items: center; margin: 1.2em 0; padding: 1.2em 1.6em; border: 2px solid var(--fg); border-radius: 12px; }
+.cast-focus__portrait { width: 5.2em; height: 5.2em; font-size: 2.6em; }
+.cast-focus__body p { margin: 0 0 .3em; }
+.cast-focus__no { color: var(--muted); font-size: .85em; }
+.cast-focus__name { font-size: 1.8em; }
+.cast-focus__name .cast__job { font-size: .55em; color: var(--muted); }
+.cast-focus__criterion { font-weight: 700; }
+.cast-focus__archetype { color: var(--muted); }
+.cast-focus__line { margin-top: .6em !important; font-size: 1.35em; font-weight: 600; line-height: 1.45; }
+.cast-seen { list-style: none; padding: 0; display: flex; gap: .8em; }
+.cast-seen__char { padding: .2em .9em; border: 1px solid var(--line); border-radius: 999px; }
+.cast-seen__char.is-current { border: 2px solid var(--fg); font-weight: 700; }
+.cast-seen__char.is-next { color: var(--muted); border-style: dashed; }
+.speakers { list-style: none; padding: 0; margin: 1em 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: .8em; align-items: end; min-height: 7.2em; }
+.speakers__char { display: flex; flex-direction: column; align-items: center; gap: .2em; opacity: .4; transition: opacity .25s; }
+.speakers__portrait { width: 2.6em; height: 2.6em; font-size: 1.3em; transition: transform .25s; }
+.speakers__name { font-size: .85em; }
+.speakers__mood { font-size: .8em; font-style: italic; color: var(--muted); text-align: center; }
+.speakers__char.is-speaking { opacity: 1; }
+.speakers__char.is-speaking .speakers__portrait { width: 3.4em; height: 3.4em; font-size: 1.9em; outline: 3px solid var(--fg); outline-offset: 3px; }
+.speakers__char.is-speaking .speakers__name { font-size: 1em; font-weight: 700; }
+.speakers + .dialogue { margin-top: .6em; }
+.speakers + .dialogue .dialogue__line.is-current .dialogue__text { font-size: 1.2em; }
+
 /* ---------- 이유 확대 ---------- */
 .feed__item { cursor: default; }
 body.view-host .feed__item { cursor: zoom-in; }
@@ -255,6 +284,9 @@ body.view-host .reason-zoom { bottom: 0; cursor: zoom-out; }
 .stage[data-enter="scene"] .scene--extra[data-kind="hidden"] .hidden-banner { animation: dgd-pop .6s 1s ease-out both; }
 .stage[data-enter="scene"] .scene--extra[data-kind="hidden"] .facts > * { animation: dgd-fade .6s 1.5s ease-out both; }
 .stage[data-enter] .dialogue__line.is-current { animation: dgd-rise .3s ease-out both; }
+.stage[data-enter] .cast-focus { animation: dgd-rise .4s ease-out both; }
+.stage[data-enter] .cast-focus__portrait { animation: dgd-pop .5s ease-out both; }
+.stage[data-enter] .speakers__char.is-speaking .speakers__portrait { animation: dgd-pop .4s ease-out both; }
 .stage[data-enter="scene"] .tally__fill { transform-origin: left center; animation: dgd-grow .8s .2s ease-out both; }
 .stage[data-enter="scene"] .scene--result2 .cast__delta { display: inline-block; animation: dgd-pop .5s .9s ease-out both; }
 .stage[data-enter="scene"] .scene--result2 .result__score { animation: dgd-fade .5s .6s ease-out both; }

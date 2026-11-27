@@ -18,7 +18,9 @@ const CONTENT = {
   question: '환경문제를 정의할 때 어떤 지식이 ‘과학적’ 또는 ‘정당한’ 지식으로 인정되며, 지역·전통지식은 왜 배제되기도 하는가?',
   role: D('여러분은 신입 환경정책 코디네이터입니다. 네 사람과 대화하며 새만금(Stage 1~2)과 대만(Stage 1~2)의 갈림길에서 대사를 고릅니다.'),
 
-  /* 등장인물 4인 (id는 바꾸지 마세요: haesol / yoon / field / kang) */
+  /* 등장인물 4인 (id는 바꾸지 마세요: haesol / yoon / field / kang)
+     그림을 넣으려면: 저장소에 img 폴더를 만들어 그림을 올리고, 그 인물에 image: 'img/haesol.png' 처럼 한 줄을 더함.
+     image 가 없으면 emoji 가 그림 자리에 나옴. 직접 그렸거나 써도 되는 그림만 올릴 것(저장소가 공개라 누구나 볼 수 있음) */
   characters: [
     { id: 'haesol', emoji: '🌿', name: '해솔', job: '현장 생태학자',
       criterion: 'A. 생태적 지속가능성', archetype: '다정하지만 단호한 자연주의자',
