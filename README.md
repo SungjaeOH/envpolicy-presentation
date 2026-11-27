@@ -6,9 +6,9 @@
 
 ## 주소
 
-- `발표자 화면` https://sungjaeoh.github.io/dgd-game/?view=host — `노트북에서 엽니다. → ← 키로 장면을 넘깁니다`
-- `참가자 화면` https://sungjaeoh.github.io/dgd-game/ — `휴대폰에서 엽니다. 수업에서는 발표자 화면의 QR로 들어옵니다`
-- `발표 화면` https://sungjaeoh.github.io/dgd-game/?view=screen — `조작 버튼 없이 따라가기만 하는 화면`
+- `발표자 화면` https://sungjaeoh.github.io/envpolicy-presentation/?view=host — `노트북에서 엽니다. → ← 키로 장면을 넘깁니다`
+- `참가자 화면` https://sungjaeoh.github.io/envpolicy-presentation/ — `휴대폰에서 엽니다. 수업에서는 발표자 화면의 QR로 들어옵니다`
+- `발표 화면` https://sungjaeoh.github.io/envpolicy-presentation/?view=screen — `조작 버튼 없이 따라가기만 하는 화면`
 
 ## 한 사례의 순서
 
