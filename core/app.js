@@ -722,12 +722,22 @@
       h('span', { class: 'meter__value' }, fmtSigned(v)));
   }
   /* 4인의 현재 호감도. delta 를 주면 이번 변화량도 같이 표시 */
+  /* 화면에 보일 인물 정보. 현장지기는 사례·Stage마다 다른 사람(이름 = 그 Stage의 fieldAs 또는 사례의 fieldRole, 작은 글씨로 '현장지기') */
+  function who(id, caseId, key) {
+    const ch = CHAR[id];
+    if (!ch) return null;
+    if (id !== 'field' || !caseId) return { id: id, emoji: ch.emoji, name: ch.name, tag: null, image: ch.image };
+    const cs = CASE[caseId], sg = key ? STAGE[key] : null;
+    return { id: id, emoji: cs.fieldEmoji || ch.emoji, name: plain((sg && sg.st.fieldAs) || cs.fieldRole) || ch.name, tag: ch.name, image: cs.fieldImage || ch.image };
+  }
+  function whoName(w) { return [w.name, w.tag ? h('small', { class: 'who__tag' }, ' ' + w.tag) : null]; }
   function castBar(caseId, sums, delta) {
     return h('ul', { class: 'cast' }, CONTENT.characters.map(function (ch) {
+      const w = who(ch.id, caseId);
       return h('li', { class: 'cast__char', 'data-char': ch.id },
-        h('span', { class: 'cast__emoji' }, ch.emoji),
-        h('span', { class: 'cast__name' }, ch.name),
-        ch.id === 'field' && caseId ? h('span', { class: 'cast__role' }, CASE[caseId].fieldRole) : null,
+        h('span', { class: 'cast__emoji' }, w.emoji),
+        h('span', { class: 'cast__name' }, w.tag || w.name),
+        w.tag ? h('span', { class: 'cast__role' }, w.name) : null,
         meter(sums[ch.id] || 0),
         delta ? h('span', { class: 'cast__delta ' + signClass(delta[ch.id]) }, '이번 Stage ' + fmtSigned(delta[ch.id])) : null,
         delta ? h('span', { class: 'cast__pop ' + signClass(delta[ch.id]), 'aria-hidden': 'true' },
@@ -735,6 +745,29 @@
     }));
   }
   /* 대화창. step 번째 줄까지 보여 줌. 지나간 줄은 is-past (디자인에서 숨겨도 됨) */
+  /* 근거 표시: 화면 구석에 작게. 팀 문서 탭 번호와 원문 쪽수 */
+  function sourceLine(src) { return plain(src) ? h('p', { class: 'source' }, '근거: ', T(src)) : null; }
+  /* 자료 그림. bars = 막대, people = 사람 수 */
+  function figureBox(fig) {
+    const box = h('figure', { class: 'figure figure--' + fig.type });
+    box.appendChild(h('figcaption', { class: 'figure__title' }, T(fig.title)));
+    if (fig.type === 'bars') {
+      const max = fig.max || Math.max.apply(null, fig.items.map(function (it) { return it.value; }));
+      box.appendChild(h('ul', { class: 'figure__bars' }, fig.items.map(function (it) {
+        return h('li', null, h('span', { class: 'figure__label' }, T(it.label)),
+          h('span', { class: 'figure__track' }, h('span', { class: 'figure__fill', style: 'width:' + Math.max(0, Math.min(100, it.value / max * 100)).toFixed(1) + '%' })),
+          h('span', { class: 'figure__value' }, it.value + (fig.unit || '')));
+      })));
+    } else if (fig.type === 'people') {
+      const dots = [];
+      for (let i = 0; i < fig.total; i++) dots.push(h('span', { class: 'figure__dot' + (i < fig.mark ? ' is-mark' : '') }));
+      box.appendChild(h('div', { class: 'figure__people' }, dots));
+      if (fig.legend) box.appendChild(h('p', { class: 'figure__legend' },
+        h('span', { class: 'figure__dot' }), ' ', T(fig.legend[0]), ' · ', h('span', { class: 'figure__dot is-mark' }), ' ', T(fig.legend[1])));
+    }
+    if (plain(fig.source)) box.appendChild(sourceLine(fig.source));
+    return box;
+  }
   /* 인물 그림 자리. 지금은 이모지가 들어가 있고, 그림이 생기면 style.css 에서
      [data-char="haesol"][data-mood] 같은 고리로 배경 그림을 넣으면 됨 (mood = 대사에 붙은 표정 글) */
   function portrait(ch, cls, mood) {
@@ -743,37 +776,36 @@
       img ? h('img', { src: img, alt: '' }) : ch.emoji);
   }
   /* 대사가 나올 때 네 인물을 세워 두고, 지금 말하는 인물만 크게. 시스템 알림 줄에서는 아무도 커지지 않음 */
-  function speakerRow(lines, step, caseId) {
+  function speakerRow(lines, step, caseId, key) {
     const ln = lines[Math.min(step, lines.length - 1)] || {};
     return h('ul', { class: 'speakers', 'data-speaker': CHAR[ln.who] ? ln.who : '' }, CONTENT.characters.map(function (ch) {
-      const on = ln.who === ch.id;
+      const on = ln.who === ch.id, w = who(ch.id, caseId, key);
       return h('li', { class: 'speakers__char' + (on ? ' is-speaking' : ''), 'data-char': ch.id },
-        portrait(ch, 'speakers__portrait', on ? ln.mood : null),
-        h('span', { class: 'speakers__name' }, ch.name, ch.id === 'field' && caseId ? h('small', null, ' ' + CASE[caseId].fieldRole) : null),
-        on && ln.mood ? h('span', { class: 'speakers__mood' }, ln.mood) : null);
+        portrait(w, 'speakers__portrait', on ? plain(ln.mood) || null : null),
+        h('span', { class: 'speakers__name' }, whoName(w)),
+        on && plain(ln.mood) ? h('span', { class: 'speakers__mood' }, T(ln.mood)) : null);
     }));
   }
   /* 미연시 화면: 위는 인물이 선 무대(사례별 배경 자리), 아래는 이름표가 붙은 대화창. 대화창에는 지금 대사만 보임 */
-  function vnStage(lines, step, caseId) {
+  function vnStage(lines, step, caseId, key) {
     const ln = lines[Math.min(step, lines.length - 1)] || {};
-    const ch = CHAR[ln.who];
+    const w = who(ln.who, caseId, key);
     return [
-      h('div', { class: 'vn__stage', 'data-bg': caseId || '' }, speakerRow(lines, step, caseId)),
-      h('div', { class: 'vn__box', 'data-char': ch ? ln.who : 'system' },
-        ch ? h('p', { class: 'vn__name' }, ch.emoji + ' ' + ch.name, ln.who === 'field' && caseId ? h('small', null, ' ' + CASE[caseId].fieldRole) : null) : null,
-        dialogueBox(lines, step, caseId),
+      h('div', { class: 'vn__stage', 'data-bg': caseId || '' }, speakerRow(lines, step, caseId, key)),
+      h('div', { class: 'vn__box', 'data-char': w ? ln.who : 'system' },
+        w ? h('p', { class: 'vn__name' }, w.emoji + ' ', whoName(w)) : null,
+        dialogueBox(lines, step, caseId, key),
         h('span', { class: 'vn__next', 'aria-hidden': 'true' }, '▼')),
     ];
   }
-  function dialogueBox(lines, step, caseId) {
+  function dialogueBox(lines, step, caseId, key) {
     const box = h('div', { class: 'dialogue' });
     lines.forEach(function (ln, i) {
       if (i > step) return;
-      const ch = CHAR[ln.who];
-      box.appendChild(h('p', { class: 'dialogue__line ' + (i === step ? 'is-current' : 'is-past') + (ch ? '' : ' dialogue__line--system'), 'data-char': ln.who },
-        ch ? h('span', { class: 'dialogue__who' }, ch.emoji + ' ' + ch.name,
-          ln.who === 'field' && caseId ? ' · ' + CASE[caseId].fieldRole : '',
-          ln.mood ? h('em', { class: 'dialogue__mood' }, ' (' + ln.mood + ')') : null) : null,
+      const w = who(ln.who, caseId, key);
+      box.appendChild(h('p', { class: 'dialogue__line ' + (i === step ? 'is-current' : 'is-past') + (w ? '' : ' dialogue__line--system'), 'data-char': ln.who },
+        w ? h('span', { class: 'dialogue__who' }, w.emoji + ' ' + w.name, w.tag ? ' · ' + w.tag : '',
+          plain(ln.mood) ? h('em', { class: 'dialogue__mood' }, ' (', T(ln.mood), ')') : null) : null,
         h('span', { class: 'dialogue__text' }, T(ln.text))));
     });
     return box;
@@ -1001,6 +1033,7 @@
           h('span', { class: 'cast__emoji' }, ch.emoji),
           h('strong', { class: 'cast__name' }, ch.name), ' ', h('span', { class: 'cast__job' }, '(' + ch.job + ')'),
           h('p', { class: 'cast-intro__criterion' }, ch.criterion + ' · ' + ch.archetype),
+          plain(ch.standard) ? h('p', { class: 'cast-intro__standard' }, '정당성 기준 ', T(ch.standard)) : null,
           h('p', { class: 'cast-intro__line' }, '“', T(ch.line), '”'));
       };
       if (c.step >= list.length) { el.appendChild(h('ul', { class: 'cast-intro' }, list.map(card))); return el; }
@@ -1011,7 +1044,9 @@
           h('p', { class: 'cast-focus__no' }, (c.step + 1) + ' / ' + list.length),
           h('p', { class: 'cast-focus__name' }, h('strong', null, ch.name), ' ', h('span', { class: 'cast__job' }, ch.job)),
           h('p', { class: 'cast-focus__criterion' }, ch.criterion),
+          plain(ch.standard) ? h('p', { class: 'cast-focus__standard' }, '정당성 기준 ', T(ch.standard)) : null,
           h('p', { class: 'cast-focus__archetype' }, ch.archetype),
+          plain(ch.note) ? h('p', { class: 'cast-focus__note' }, T(ch.note)) : null,
           h('p', { class: 'cast-focus__line' }, '“', T(ch.line), '”'))));
       el.appendChild(h('ul', { class: 'cast-seen' }, list.map(function (x, i) {            // 지나간 인물은 아래에 작게, 아직 안 나온 인물은 ?
         return h('li', { class: 'cast-seen__char' + (i === c.step ? ' is-current' : i < c.step ? ' is-past' : ' is-next'), 'data-char': x.id },
@@ -1036,16 +1071,17 @@
        (그 뒤의 연표와 결말이 담긴 문구는 루트 해금 장면의 '실제 역사'에서 나옴) */
     caseIntro: function (c) {
       const cs = CASE[c.sc.caseId];
-      const first = cs.stages[0], fd = CHAR.field;
+      const first = cs.stages[0], fd = who('field', cs.id);
       return [h('section', { class: 'scene scene--case-intro' },
         h('header', { class: 'scene__head' },
           plain(cs.episode) ? h('p', { class: 'scene__case' }, T(cs.episode)) : null,
           h('h2', { class: 'scene__title' }, cs.title),
           plain(cs.teaser) ? h('p', { class: 'scene__sub' }, T(cs.teaser)) : null),
         h('p', { class: 'background' }, T(cs.background)),
+        cs.figure ? figureBox(cs.figure) : null,
         h('h3', null, '지금까지의 이야기'),
         timelineList(cs.timeline || []),
-        fd ? h('p', { class: 'intro__field' }, '이번 사례의 ' + fd.emoji + ' ' + fd.name + ': ' + cs.fieldRole) : null,
+        fd ? h('p', { class: 'intro__field' }, '이번 사례의 현장지기: ' + fd.emoji + ' ' + fd.name) : null,
         first ? h('p', { class: 'intro__next' }, '이야기는 Stage 1. ', T(first.title), ' (' + first.period + ')에서 시작합니다.') : null),
         h('div', { class: 'title-card', 'aria-hidden': 'true' },
           plain(cs.episode) ? h('p', { class: 'title-card__ep' }, T(cs.episode)) : null,
@@ -1058,12 +1094,13 @@
         return h('section', { class: 'scene scene--situation scene--vn vn' },
           sceneHead(c),
           h('p', { class: 'vn__narration' }, T(sg.st.scene)),
-          vnStage(sg.st.dialogue, c.step - 1, c.sc.caseId));
+          vnStage(sg.st.dialogue, c.step - 1, c.sc.caseId, c.sc.key));
       }
       return h('section', { class: 'scene scene--situation' },
         sceneHead(c),
         h('p', { class: 'scene__question' }, T(sg.st.question)),
         h('ul', { class: 'bullets' }, sg.st.situation.map(function (s) { return h('li', null, T(s)); })),
+        sg.st.figure ? figureBox(sg.st.figure) : null,
         h('p', { class: 'scene__narration' }, T(sg.st.scene)),
         castBar(c.sc.caseId, classAffinity(c.sc.caseId, c.idx)));
     },
@@ -1118,7 +1155,8 @@
           : h('h3', { class: 'extra__title' }, T(ex.title)),
         ex.lead ? h('p', { class: 'extra__lead' }, T(ex.lead)) : null,
         h('dl', { class: 'facts' }, ex.rows.map(function (r) { return [h('dt', null, T(r[0])), h('dd', null, T(r[1]))]; })),
-        ex.note ? h('p', { class: 'extra__note' }, T(ex.note)) : null);
+        ex.note ? h('p', { class: 'extra__note' }, T(ex.note)) : null,
+        sourceLine(ex.source));
     },
     actual: function (c) {
       const st = STAGE[c.sc.key].st, ac = st.actual;
@@ -1132,7 +1170,8 @@
         h('p', { class: 'actual__match' }, '가까운 선택: ',
           h('strong', null, (f1 ? '1차 ' + NUM[ac.first] + ' ' + f1.tag : '') + (f1 && f2 ? ' → ' : '') + (f2 ? '2차 ' + NUM[ac.final] + ' ' + f2.tag : '')),
           ac.note ? [' — ', T(ac.note)] : null),
-        h('p', { class: 'actual__class' }, '우리 반: 1차 ' + line(st.choices, sum.n1) + ' → 2차 ' + line(st.final.choices, sum.n2)));
+        h('p', { class: 'actual__class' }, '우리 반: 1차 ' + line(st.choices, sum.n1) + ' → 2차 ' + line(st.final.choices, sum.n2)),
+        sourceLine(ac.source));
     },
     /* 0단계: 점수 합산과 세 루트의 개요 → 1단계: 해금된 루트 → 2단계: 실제 역사(결말 문구와 나머지 연표) */
     unlock: function (c) {
@@ -1187,9 +1226,9 @@
       return endingScene(c, '4인 호감도 최종 결과', function (cs, rt) {
         return [
           h('ul', { class: 'aftermath' }, rt.affinity.map(function (a) {
-            const ch = CHAR[a.who];
+            const w = who(a.who, cs.id);
             return h('li', { class: 'aftermath__row', 'data-char': a.who },
-              h('strong', { class: 'aftermath__who' }, ch.emoji + ' ' + ch.name), ' ',
+              h('strong', { class: 'aftermath__who' }, w.emoji + ' ', whoName(w)), ' ',
               h('span', { class: 'aftermath__level' }, T(a.level)),
               h('p', { class: 'aftermath__log' }, T(a.log)));
           })),
@@ -1248,8 +1287,8 @@
         const rt = cs.routes[cs.actual.route];
         return h('li', { 'data-case': cs.id }, h('strong', null, cs.short), ' — ',
           rt.affinity.map(function (a, k) {
-            const ch = CHAR[a.who];
-            return [k ? ' · ' : '', h('span', { 'data-char': a.who }, ch.emoji + ' ' + ch.name + ' ', T(a.level))];
+            const w = who(a.who, cs.id);
+            return [k ? ' · ' : '', h('span', { 'data-char': a.who }, w.emoji + ' ' + (w.tag || w.name) + ' ', T(a.level))];
           }));
       })));
       return el;
@@ -1694,7 +1733,9 @@
     ctl.resetYes = h('button', { type: 'button', class: 'danger', hidden: true, onclick: function () { S.ui.resetArmed = false; resetAll(); requestRender(); } }, '정말 지움 (참가자·투표 전부)');
     ctl.resetNo = h('button', { type: 'button', hidden: true, onclick: function () { S.ui.resetArmed = false; requestRender(); } }, '취소');
 
+    ctl.note = h('p', { class: 'controls__note', hidden: true });     // 발표자 메모(발표 화면에는 안 나옴)
     return h('div', { class: 'controls' },
+      ctl.note,
       h('div', { class: 'controls__main' }, ctl.prev, ctl.next, ctl.pos, ctl.jump, ctl.routeBox, ctl.voteBox),
       h('details', { class: 'controls__more' },
         h('summary', null, '테스트 도구'),
@@ -1713,9 +1754,26 @@
         } }, '전체 화면'),
         ctl.resetBtn, ctl.resetYes, ctl.resetNo));
   }
+  /* 발표자 메모: 지금 장면에 맞는 메모(Stage → 사례 → 공통 순으로 찾음) */
+  function hostNote(c) {
+    const t = c.sc.type, sg = c.sc.key ? STAGE[c.sc.key] : null, cs = c.sc.caseId ? CASE[c.sc.caseId] : null;
+    const sn = (sg && sg.st.notes) || {};
+    let n = null;
+    if (sg) {
+      if (t === 'situation') n = c.step >= 1 ? (sn.dialogue || sn.situation) : sn.situation;
+      else if (t === 'vote') n = c.sc.round === 2 ? sn.vote2 : sn.vote1;
+      else n = sn[t];
+    } else if (cs && t === 'caseIntro') n = cs.notes && cs.notes.intro;
+    else if (cs && t === 'unlock') n = cs.notes && cs.notes.unlock;
+    if (!plain(n) && CONTENT.notes) n = CONTENT.notes[t];
+    return plain(n) ? n : null;
+  }
   function updateControls() {
     if (!ctl) return;
     const c = cur();
+    const note = hostNote(c);
+    ctl.note.hidden = !note;
+    ctl.note.replaceChildren(h('strong', null, '메모 '), note ? T(note) : '');
     ctl.prev.disabled = c.idx === 0 && c.step === 0;
     ctl.next.disabled = c.idx === SCENES.length - 1 && c.step === c.steps - 1;
     ctl.pos.textContent = '장면 ' + (c.idx + 1) + ' / ' + SCENES.length;
