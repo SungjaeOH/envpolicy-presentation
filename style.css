@@ -66,6 +66,26 @@ body.view-play .is-draft::after { content: none; }
 .topbar__session { white-space: nowrap; }
 /* ==형광펜== 표시 */
 mark.hl { background: linear-gradient(transparent 58%, #ffe58a 58%); color: inherit; padding: 0 .05em; }
+/* [[용어]]: 풀이가 있는 말. 발표자 화면에서는 눌러서 풀이를 띄움(발표 화면에도 같이 뜸) */
+.term { text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: .2em; }
+button.term { display: inline; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; font: inherit; color: inherit; line-height: inherit; cursor: help; }
+button.term:hover, button.term:focus-visible { background: #eef2fd; outline: none; }
+body.view-host .choice.is-clickable { cursor: zoom-in; }
+body.view-host .choice.is-clickable:hover { border-color: var(--accent); }
+/* 용어 풀이·선택지 크게 보기 카드 */
+.info { position: fixed; inset: 0; z-index: 21; display: flex; align-items: center; justify-content: center; padding: 4vh 6vw; background: rgba(0, 0, 0, .5); }
+body.view-host .info { cursor: zoom-out; }
+.info__card { width: 100%; max-width: 46em; max-height: 92vh; overflow: auto; padding: 1.2em 1.6em; background: #fff; border-left: 6px solid var(--accent); border-radius: 12px; cursor: default; }
+.info__kind { margin: 0 0 .2em; font-size: .85em; font-weight: 700; color: var(--accent); }
+.info__title { margin: 0 0 .5em; font-size: 2em; line-height: 1.25; }
+.info__lines { margin: 0 0 .6em; padding-left: 1.1em; font-size: 1.35em; line-height: 1.5; }
+.info__lines li + li { margin-top: .3em; }
+.info__line { margin: 0 0 .5em; font-size: 2em; line-height: 1.4; font-weight: 700; }
+.info__policy { margin: 0; font-size: 1.3em; color: var(--muted); }
+.info__policy strong { color: var(--fg); }
+.info__tools { display: flex; justify-content: flex-end; margin: 1em 0 0; font-size: 15px; }
+.info.is-fresh { animation: dgd-fade .2s ease-out both; }
+.info.is-fresh .info__card { animation: dgd-pop .25s ease-out both; }
 /* 추가 자료 화면에 고정된 이번 질문 */
 .pinned-q { margin: .2em 0 .7em; padding: .45em .8em; border-left: 3px solid var(--accent); background: #eef2fd; font-weight: 700; }
 .pinned-q__label { display: block; font-size: .75em; font-weight: 700; color: var(--accent); }

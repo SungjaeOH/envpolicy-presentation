@@ -57,6 +57,7 @@
   });
 
   /* ---------- 장면 목록 (발표자가 "다음"을 누르면 이 순서대로 넘어감) ---------- */
+  const GLOSSARY = CONTENT.glossary || {};
   const SCENES = [];
   function addScene(o) { o.index = SCENES.length; SCENES.push(o); }
   addScene({ id: 'lobby', type: 'lobby', label: '입장' });
@@ -130,11 +131,29 @@
   }
   /* 내용의 글 한 조각을 화면에 넣기. D('...')로 감싼 임시 문구는 표시를 붙임.
      학생이 입력한 글도 전부 글자 그대로 들어감(태그로 해석되지 않음). */
-  /* 글 안의 ==이렇게== 감싼 부분은 형광펜(노란 밑줄)으로 표시 */
+  /* 글 안의 표시
+       ==이렇게==        → 형광펜(노란 밑줄)
+       [[용어]]           → 용어 풀이(content.js 의 glossary)가 있는 말. 발표자 화면에서 누르면 발표 화면에도 풀이가 크게 뜸
+       [[보이는 말|용어]] → 화면에는 '보이는 말'을 쓰고, 풀이는 glossary 의 '용어' 항목을 씀
+     휴대폰에서는 용어 표시 없이 글만 보임 */
+  const TOKEN = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|==([^=]+)==/g;
   function marked(str) {
-    const parts = String(str).split('==');
-    if (parts.length < 3) return [document.createTextNode(String(str))];
-    return parts.map(function (t, i) { return i % 2 && i < parts.length - 1 ? h('mark', { class: 'hl' }, t) : document.createTextNode(i % 2 ? '==' + t : t); });
+    str = String(str);
+    const out = []; let last = 0, m;
+    TOKEN.lastIndex = 0;
+    while ((m = TOKEN.exec(str))) {
+      if (m.index > last) out.push(document.createTextNode(str.slice(last, m.index)));
+      out.push(m[3] != null ? h('mark', { class: 'hl' }, m[3]) : termNode(m[1], m[2] || m[1]));
+      last = TOKEN.lastIndex;
+    }
+    if (last < str.length || !out.length) out.push(document.createTextNode(str.slice(last)));
+    return out;
+  }
+  function termNode(label, id) {
+    if (!GLOSSARY[id] || VIEW === 'play') return document.createTextNode(label);
+    if (VIEW === 'host') return h('button', { type: 'button', class: 'term', 'data-term': id, title: '눌러서 풀이 보기',
+      onclick: function (e) { e.stopPropagation(); showInfo('g:' + id); } }, label);
+    return h('span', { class: 'term', 'data-term': id }, label);
   }
   function T(x) {
     if (x && typeof x === 'object' && 't' in x) {
@@ -154,7 +173,10 @@
       e.preventDefault(); fn();
     });
   }
-  function plain(x) { return (x && typeof x === 'object' && 't' in x ? x.t : (x == null ? '' : String(x))).replace(/==([^=]+)==/g, '$1'); }
+  function plain(x) {
+    return (x && typeof x === 'object' && 't' in x ? x.t : (x == null ? '' : String(x)))
+      .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1').replace(/==([^=]+)==/g, '$1');
+  }
   function fmtSigned(v) { v = Math.round(v * 10) / 10; return (v > 0 ? '+' : '') + v; }
   function signClass(v) { return v > 0 ? 'is-up' : v < 0 ? 'is-down' : 'is-flat'; }
   function stable(v) {
@@ -324,7 +346,8 @@
     const step = Math.min(Math.max(0, st.step | 0), steps - 1);
     return { idx: sc.index, sc: sc, step: step, steps: steps, open: st.open || null, peek: st.peek || null, feed: st.feed !== false, rp: st.rp | 0,
       zoom: st.zoom && st.zoom.k && st.zoom.p ? { k: String(st.zoom.k), p: String(st.zoom.p) } : null,
-      wall: st.wall ? String(st.wall) : null, typed: st.typed ? String(st.typed) : null };
+      wall: st.wall ? String(st.wall) : null, typed: st.typed ? String(st.typed) : null,
+      info: typeof st.info === 'string' ? st.info : null };
   }
 
   /* ============================================================
@@ -478,7 +501,7 @@
     // 같은 사례의 엔딩 장면 안에서 움직일 때는 "루트 보기"에서 고른 루트를 유지
     const keepPeek = c.peek && ENDING_TYPES[sc.type] && ENDING_TYPES[c.sc.type] && sc.caseId === c.sc.caseId;
     // 투표 장면에 들어가면 그 투표(1차 또는 2차)가 열리고, 나가면 닫힘
-    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0, zoom: null, wall: null, typed: null });
+    return setState({ scene: sc.id, step: step || 0, open: sc.type === 'vote' ? sc.vkey : null, peek: keepPeek ? c.peek : null, rp: 0, zoom: null, wall: null, typed: null, info: null });
   }
   function go(delta) {
     if (!S.sync || VIEW !== 'host') return;
@@ -540,6 +563,8 @@
   }
   /* 이유 하나를 화면 가운데에 크게 띄움(발표 화면도 같이). pid 를 비우면 닫음 */
   function zoomReason(vkey, pid) { return setState({ zoom: pid ? { k: vkey, p: pid } : null }); }
+  /* 용어 풀이·선택지 크게 보기. info = 'g:용어' 또는 'c:선택지 번호'. 장면이 바뀌면 닫힘 */
+  function showInfo(v) { if (VIEW === 'host' && S.sync) return setState({ info: v || null }); }
   /* 지금 장면의 이유 창에 보이는 순서대로의 목록 (확대한 채 앞뒤로 넘길 때 씀) */
   function reasonOrder(c) {
     const items = reasonItems(c.sc.vkey);
@@ -820,7 +845,8 @@
   }
   function choiceList(list) {
     return h('ol', { class: 'choices', 'data-count': list.length }, list.map(function (ch, i) {
-      return h('li', { class: 'choice', 'data-choice': i },
+      return h('li', { class: 'choice' + (VIEW === 'host' ? ' is-clickable' : ''), 'data-choice': i,
+          title: VIEW === 'host' ? '눌러서 크게 보기' : null, onclick: VIEW === 'host' ? function () { showInfo('c:' + i); } : null },
         h('span', { class: 'choice__num' }, NUM[i]),
         h('span', { class: 'choice__line' }, '“', T(ch.line), '”'),
         CONFIG.showPolicyOnVote ? h('span', { class: 'choice__policy' }, ch.tag, plain(ch.policy) ? [' · ', T(ch.policy)] : null) : null);
@@ -1351,9 +1377,37 @@
     if (wall) main.appendChild(wall);
     const zoom = reasonZoom(c);
     if (zoom) main.appendChild(zoom);
+    const info = infoCard(c);
+    if (info) main.appendChild(info);
     return main;
   }
-  let lastShown = '', lastZoom = '', lastWall = '';
+  let lastShown = '', lastZoom = '', lastWall = '', lastInfo = '';
+  /* 용어 풀이 카드 / 선택지 크게 보기 카드 */
+  function infoCard(c) {
+    if (!c.info) { lastInfo = ''; return null; }
+    let card = null;
+    if (c.info.slice(0, 2) === 'g:') {
+      const g = GLOSSARY[c.info.slice(2)];
+      if (g) card = [
+        h('p', { class: 'info__kind' }, '용어 풀이'),
+        h('h3', { class: 'info__title' }, T(g.term || c.info.slice(2))),
+        h('ul', { class: 'info__lines' }, (g.lines || []).map(function (l) { return h('li', null, T(l)); })),
+        sourceLine(g.source)];
+    } else if (c.info.slice(0, 2) === 'c:' && c.sc.type === 'vote') {
+      const list = choicesOf(c.sc.key, c.sc.round), i = Number(c.info.slice(2)), ch = list[i];
+      if (ch) card = [
+        h('p', { class: 'info__kind' }, (c.sc.round === 2 ? '2차' : '1차') + ' 선택지 ' + NUM[i]),
+        h('p', { class: 'info__line' }, '“', T(ch.line), '”'),
+        h('p', { class: 'info__policy' }, h('strong', null, ch.tag), plain(ch.policy) ? [' · ', T(ch.policy)] : null)];
+    }
+    if (!card) { lastInfo = ''; return null; }
+    const fresh = lastInfo !== c.info; lastInfo = c.info;
+    return h('div', { class: 'info' + (fresh ? ' is-fresh' : ''), onclick: VIEW === 'host' ? function () { showInfo(null); } : null },
+      h('div', { class: 'info__card', onclick: function (e) { e.stopPropagation(); } },
+        card,
+        VIEW === 'host' ? h('p', { class: 'info__tools' },
+          h('button', { type: 'button', class: 'primary info__close', onclick: function () { showInfo(null); } }, '닫기 (Esc)')) : null));
+  }
   /* 흩어 놓을 자리를 정하는 데 쓰는 값. 같은 사람의 이유는 늘 같은 자리 근처에 오도록 pid 로 정함 */
   function hashStr(s) { let x = 2166136261; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
   function seeded(seed) {
@@ -1961,6 +2015,7 @@
       if (VIEW !== 'host' || e.altKey || e.ctrlKey || e.metaKey) return;
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (cur().info && e.key === 'Escape') { e.preventDefault(); showInfo(null); return; }   // 용어 풀이·선택지 크게 보기 닫기
       if (cur().zoom) {                                           // 이유를 확대해 둔 동안: Esc 닫기, ← → ↑ ↓ 로 앞뒤 이유
         if (e.key === 'Escape') { e.preventDefault(); zoomReason(cur().sc.vkey, null); return; }
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); zoomStep(1); return; }
