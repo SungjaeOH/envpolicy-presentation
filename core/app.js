@@ -1658,7 +1658,7 @@
     if (!chrome) return;
     const c = cur();
     chrome.scene.textContent = VIEW === 'play' ? '' : c.sc.label + (c.steps > 1 ? ' (' + (c.step + 1) + '/' + c.steps + ')' : '') +
-      (VIEW === 'host' && SESSION !== DEFAULT_SESSION ? ' · 세션 ' + SESSION : '');
+      (VIEW !== 'play' ? ' · 세션 ' + SESSION : '');                  // 발표자 화면과 발표 화면의 세션이 같은지 눈으로 맞춰 볼 수 있게
     chrome.count.textContent = VIEW === 'play' ? '' : '입장 ' + playerCount() + '명';
     chrome.conn.textContent = DEMO ? '데모 모드' : (S.connected ? '연결됨' : '연결 중…');
     chrome.conn.className = 'topbar__conn ' + (DEMO ? 'is-demo' : S.connected ? 'is-on' : 'is-off');
@@ -1704,6 +1704,8 @@
       h('details', { class: 'controls__more' },
         h('summary', null, '관리'),
         h('button', { type: 'button', onclick: function () { const u = newSessionUrl(); if (u) location.href = u; } }, '새 세션으로 시작'),
+        h('button', { type: 'button', title: '지금 세션의 발표 화면을 새 창으로 엽니다. 프로젝터 쪽으로 옮겨 전체 화면(F11)으로 쓰세요.',
+          onclick: function () { window.open(viewUrl('screen'), 'dgd-screen'); } }, '발표 화면 열기 (새 창)'),
         h('button', { type: 'button', onclick: downloadCsv }, '응답 내려받기 (CSV)'),
         h('button', { type: 'button', onclick: function () {
           const el = document.documentElement;
