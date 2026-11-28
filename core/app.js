@@ -130,11 +130,19 @@
   }
   /* 내용의 글 한 조각을 화면에 넣기. D('...')로 감싼 임시 문구는 표시를 붙임.
      학생이 입력한 글도 전부 글자 그대로 들어감(태그로 해석되지 않음). */
+  /* 글 안의 ==이렇게== 감싼 부분은 형광펜(노란 밑줄)으로 표시 */
+  function marked(str) {
+    const parts = String(str).split('==');
+    if (parts.length < 3) return [document.createTextNode(String(str))];
+    return parts.map(function (t, i) { return i % 2 && i < parts.length - 1 ? h('mark', { class: 'hl' }, t) : document.createTextNode(i % 2 ? '==' + t : t); });
+  }
   function T(x) {
     if (x && typeof x === 'object' && 't' in x) {
-      return h('span', { class: x.draft && CONFIG.showDraftMarks ? 'is-draft' : null }, x.t);
+      return h('span', { class: x.draft && CONFIG.showDraftMarks ? 'is-draft' : null }, marked(x.t));
     }
-    return document.createTextNode(x == null ? '' : String(x));
+    if (x == null) return document.createTextNode('');
+    const m = marked(x);
+    return m.length === 1 ? m[0] : h('span', null, m);
   }
   /* 입력란에서 Enter를 누르면 fn 실행. 한글 조합 중의 Enter는 무시.
      (미리보기 창처럼 form 제출이 막힌 곳에서도 되도록 제출 이벤트 대신 클릭·키 입력을 직접 받음) */
@@ -146,7 +154,7 @@
       e.preventDefault(); fn();
     });
   }
-  function plain(x) { return x && typeof x === 'object' && 't' in x ? x.t : (x == null ? '' : String(x)); }
+  function plain(x) { return (x && typeof x === 'object' && 't' in x ? x.t : (x == null ? '' : String(x))).replace(/==([^=]+)==/g, '$1'); }
   function fmtSigned(v) { v = Math.round(v * 10) / 10; return (v > 0 ? '+' : '') + v; }
   function signClass(v) { return v > 0 ? 'is-up' : v < 0 ? 'is-down' : 'is-flat'; }
   function stable(v) {
@@ -1150,6 +1158,7 @@
       const ex = STAGE[c.sc.key].st.extra;
       return h('section', { class: 'scene scene--extra', 'data-kind': ex.kind },
         sceneHead(c),
+        h('p', { class: 'pinned-q' }, h('span', { class: 'pinned-q__label' }, '이번 질문'), T(STAGE[c.sc.key].st.question)),
         ex.kind === 'hidden'
           ? h('p', { class: 'hidden-banner' }, '💌 HIDDEN EVENT UNLOCKED : ', T(ex.title))
           : h('h3', { class: 'extra__title' }, T(ex.title)),
@@ -1466,8 +1475,11 @@
   /* 2차 투표 화면 위에 작게 보여 주는 1차 선택 */
   function myFirst(key) {
     const st = STAGE[key].st, mine = S.myVotes[key];
-    if (!validPick(mine, st.choices.length)) return h('p', { class: 'my-first' }, '1차 투표는 하지 않았습니다.');
-    return h('p', { class: 'my-first' }, '내 1차 선택: ', h('span', { class: 'choice__num' }, NUM[mine.c]), ' “', T(st.choices[mine.c].line), '”');
+    if (!validPick(mine, st.choices.length)) return h('div', { class: 'my-first' }, h('p', { class: 'my-first__label' }, '처음 고른 대사'), h('p', null, '1차 투표는 하지 않았습니다.'));
+    return h('div', { class: 'my-first' },
+      h('p', { class: 'my-first__label' }, '처음 고른 대사'),
+      h('p', null, h('span', { class: 'choice__num' }, NUM[mine.c]), ' “', T(st.choices[mine.c].line), '”'),
+      mine.r ? h('p', { class: 'my-first__reason' }, '내 이유: ', mine.r) : null);
   }
   function affinityList(aff, label) {
     return h('div', { class: 'my-affinity' },
@@ -1543,7 +1555,7 @@
         });
       };
       onEnter(form, send);
-      form.appendChild(h('p', { class: 'ballot__prompt' }, second ? '추가 자료를 봤습니다. 이제 어떻게 할까요?' : '어떤 대사로 답할까요?'));
+      form.appendChild(h('p', { class: 'ballot__prompt' }, second ? '추가 자료를 보고 생각이 달라졌나요? 최종 대사를 골라 주세요.' : '어떤 대사로 답할까요?'));
       list.forEach(function (ch, i) {
         const input = h('input', { type: 'radio', name: 'choice', value: String(i), id: 'choice-' + i, checked: d.c === i,
           onchange: function () {
@@ -1655,6 +1667,7 @@
       S.me.notice ? h('p', { class: 'notice' }, S.me.notice) : null,
       h('label', { for: 'join-name' }, '이름'), name,
       h('label', { for: 'join-dept' }, '학과'), dept,
+      h('p', { class: 'join__note' }, '이름은 입장 확인용입니다. 투표 이유는 발표 화면에 이름 없이 나오고, 발표자가 골라 크게 띄울 때만 이름이 함께 나옵니다.'),
       S.me.error ? h('p', { class: 'notice notice--error' }, S.me.error) : null,
       h('button', { type: 'button', class: 'primary join__enter', onclick: enter }, S.me.editing ? '저장' : '입장'));
     onEnter(form, enter);
@@ -1693,10 +1706,25 @@
     app.appendChild(chrome.view);
     if (VIEW === 'host') app.appendChild(buildControls());
   }
+  /* Stage 안에서는 상단 표시줄에 7단계(상황 → … → 실제 선택)를 줄로 보여 주고 지금 단계를 칠함 */
+  function stageFlow(c) {
+    if (!c.sc.key) return null;
+    const sg = STAGE[c.sc.key], cs = CASE[c.sc.caseId];
+    const ids = ['situation', 'vote1', 'result1', 'extra', 'vote2', 'result2', 'actual'];
+    const now = ids.indexOf(c.sc.id.slice(c.sc.key.length + 1));
+    return h('span', { class: 'flow' },
+      h('span', { class: 'flow__where' }, cs.short + ' · Stage ' + (sg.i + 1)),
+      h('ol', { class: 'flow__list' }, ids.map(function (id, i) {
+        const label = SCENE_BY_ID[c.sc.key + '-' + id].label.split(' · ').pop();
+        return h('li', { class: 'flow__item' + (i === now ? ' is-now' : i < now ? ' is-done' : '') }, h('span', { class: 'flow__label' }, label, i === now && c.steps > 1 ? h('small', { class: 'flow__step' }, ' (' + (c.step + 1) + '/' + c.steps + ')') : null));
+      })));
+  }
   function updateChrome() {
     if (!chrome) return;
     const c = cur();
-    chrome.scene.textContent = VIEW === 'play' ? '' : c.sc.label + (c.steps > 1 ? ' (' + (c.step + 1) + '/' + c.steps + ')' : '') +
+    const flow = VIEW === 'play' ? null : stageFlow(c);
+    if (flow) chrome.scene.replaceChildren(flow, h('span', { class: 'topbar__session' }, ' · 세션 ' + SESSION));
+    else chrome.scene.textContent = VIEW === 'play' ? '' : c.sc.label + (c.steps > 1 ? ' (' + (c.step + 1) + '/' + c.steps + ')' : '') +
       (VIEW !== 'play' ? ' · 세션 ' + SESSION : '');                  // 발표자 화면과 발표 화면의 세션이 같은지 눈으로 맞춰 볼 수 있게
     chrome.count.textContent = VIEW === 'play' ? '' : '입장 ' + playerCount() + '명';
     chrome.conn.textContent = DEMO ? '데모 모드' : (S.connected ? '연결됨' : '연결 중…');

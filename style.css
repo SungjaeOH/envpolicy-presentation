@@ -53,6 +53,22 @@ body.view-play .is-draft::after { content: none; }
 .topbar__title { font-weight: 700; color: var(--fg); }
 .topbar__scene { flex: 1; }
 .topbar__conn.is-off { color: #b00020; }
+/* Stage 진행 줄: 상황 → 1차 투표 → … → 실제 선택. 지금 단계만 칠하고, 지난 단계는 진하게 */
+.flow { display: inline-flex; align-items: center; gap: .6em; flex-wrap: wrap; }
+.flow__where { font-weight: 700; color: var(--accent); }
+.flow__list { display: inline-flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.flow__item { display: inline-flex; align-items: center; white-space: nowrap; }
+.flow__item + .flow__item::before { content: ""; display: inline-block; width: 1.1em; height: 1px; margin: 0 .3em; background: #b9c6ef; }
+.flow__label { padding: .1em .45em; border-radius: 3px; }
+.flow__item.is-done { color: var(--fg); }
+.flow__item.is-now .flow__label { background: var(--accent); color: #fff; font-weight: 700; }
+.flow__item.is-now .flow__step { color: #dfe6fb; }
+.topbar__session { white-space: nowrap; }
+/* ==형광펜== 표시 */
+mark.hl { background: linear-gradient(transparent 58%, #ffe58a 58%); color: inherit; padding: 0 .05em; }
+/* 추가 자료 화면에 고정된 이번 질문 */
+.pinned-q { margin: .2em 0 .7em; padding: .45em .8em; border-left: 3px solid var(--accent); background: #eef2fd; font-weight: 700; }
+.pinned-q__label { display: block; font-size: .75em; font-weight: 700; color: var(--accent); }
 .flash { margin: 0; padding: .5em 1em; background: #fff3cd; font-size: 14px; }
 .demobar { display: flex; flex-wrap: wrap; gap: .3em 1em; padding: .4em 1em; background: #fff8dc; font-size: 13px; }
 .demobar a.is-on { font-weight: 700; color: inherit; text-decoration: none; }
@@ -198,7 +214,11 @@ body.view-play button.primary, body.view-play button.secondary { width: 100%; pa
 .pscene__title { font-size: 1.3em; }
 .pscene__question { font-weight: 700; }
 .pscene__round { margin-bottom: .2em; font-weight: 700; color: var(--accent); }
-.my-first { color: var(--muted); }
+.my-first { margin: .2em 0 .6em; padding: .55em .8em; border-left: 3px solid var(--accent); background: #eef2fd; border-radius: 0 var(--radius) var(--radius) 0; }
+.my-first p { margin: 0; }
+.my-first__label { font-size: .8em; font-weight: 700; color: var(--accent); }
+.my-first__reason { margin-top: .2em !important; color: var(--muted); }
+.join__note { margin: .3em 0 0; padding-left: .7em; border-left: 3px solid var(--accent); font-size: .85em; color: var(--muted); }
 .my-score { margin: .8em 0; }
 .pscene__hint { color: var(--muted); margin-top: 1em; }
 .ballot { display: grid; gap: .6em; }
